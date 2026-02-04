@@ -194,29 +194,53 @@ export class ConvosSDKClient {
   }
 
   /**
-   * Create a new conversation
+   * Create a new conversation with invite URL
    */
   async createConversation(name?: string): Promise<CreateConversationResult> {
-    const result = await this.convos.createConversation(name);
+    if (this.debug) {
+      console.log(`[convos-sdk] Creating conversation: ${name ?? "OpenClaw"}`);
+    }
 
-    // The SDK returns the full invite URL
-    const inviteUrl = result.inviteUrl ?? `https://popup.convos.org/v2?i=${result.inviteSlug}`;
+    // Create XMTP group first
+    const group = await this.agent.client.conversations.createGroup([]);
+
+    if (this.debug) {
+      console.log(`[convos-sdk] Created XMTP group: ${group.id}`);
+    }
+
+    // Wrap with Convos to get invite functionality
+    const convosGroup = this.convos.group(group);
+
+    // Create invite (automatically manages metadata)
+    const invite = await convosGroup.createInvite({ name });
+
+    if (this.debug) {
+      console.log(`[convos-sdk] Created invite: ${invite.url}`);
+    }
 
     return {
-      conversationId: result.conversationId,
-      inviteSlug: result.inviteSlug,
-      inviteUrl,
+      conversationId: group.id,
+      inviteSlug: invite.slug,
+      inviteUrl: invite.url,
     };
   }
 
   /**
-   * Get invite slug for a conversation
+   * Get or create invite slug for a conversation
    */
   async getInvite(conversationId: string): Promise<InviteResult> {
-    const result = await this.convos.getInvite(conversationId);
+    const conversation = await this.agent.client.conversations.getConversationById(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+
+    // Wrap with Convos and create a new invite
+    // Note: SDK doesn't have a "get existing invite" method, so we create a new one
+    const convosGroup = this.convos.group(conversation);
+    const invite = await convosGroup.createInvite();
 
     return {
-      inviteSlug: result.slug,
+      inviteSlug: invite.slug,
     };
   }
 

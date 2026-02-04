@@ -101,6 +101,7 @@ export type AppViewState = {
   convosMessage: string | null;
   convosInviteUrl: string | null;
   convosBusy: boolean;
+  convosJoined: boolean;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
   configFormDirty: boolean;

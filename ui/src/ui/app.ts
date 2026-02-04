@@ -193,6 +193,7 @@ export class OpenClawApp extends LitElement {
   @state() convosMessage: string | null = null;
   @state() convosInviteUrl: string | null = null;
   @state() convosBusy = false;
+  @state() convosJoined = false;
   @state() nostrProfileFormState: NostrProfileFormState | null = null;
   @state() nostrProfileAccountId: string | null = null;
 

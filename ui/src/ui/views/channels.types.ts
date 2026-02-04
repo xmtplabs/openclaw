@@ -30,6 +30,7 @@ export type ChannelsProps = {
   convosMessage: string | null;
   convosInviteUrl: string | null;
   convosBusy: boolean;
+  convosJoined: boolean;
   configSchema: unknown;
   configSchemaLoading: boolean;
   configForm: Record<string, unknown> | null;

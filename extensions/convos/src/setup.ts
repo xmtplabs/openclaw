@@ -2,6 +2,7 @@
  * Convos setup - creates XMTP identity and conversation, returns invite URL
  */
 
+import type { InviteContext } from "convos-node-sdk";
 import { resolveConvosAccount, type CoreConfig } from "./accounts.js";
 import { getConvosRuntime } from "./runtime.js";
 import { ConvosSDKClient } from "./sdk-client.js";
@@ -11,15 +12,27 @@ export type SetupConvosParams = {
   accountId?: string;
   env?: "production" | "dev";
   name?: string;
+  /** If true, keeps agent running to accept join requests (caller must stop it) */
+  keepRunning?: boolean;
+  /** Handler for incoming invite/join requests */
+  onInvite?: (ctx: InviteContext) => Promise<void>;
+};
+
+export type SetupConvosResultWithClient = ConvosSetupResult & {
+  /** The running client (only if keepRunning=true) */
+  client?: ConvosSDKClient;
 };
 
 /**
  * Setup Convos by creating an XMTP identity and owner conversation.
  * Returns an invite URL that can be displayed as a QR code.
+ *
+ * If keepRunning=true, the agent stays running to accept join requests.
+ * Caller is responsible for stopping it later.
  */
 export async function setupConvosWithInvite(
   params: SetupConvosParams,
-): Promise<ConvosSetupResult> {
+): Promise<SetupConvosResultWithClient> {
   const runtime = getConvosRuntime();
   const cfg = runtime?.config.load() ?? {};
   const account = resolveConvosAccount({
@@ -32,6 +45,7 @@ export async function setupConvosWithInvite(
     privateKey: account.privateKey,
     env: params.env ?? account.env,
     debug: false,
+    onInvite: params.onInvite,
   });
 
   try {
@@ -41,9 +55,6 @@ export async function setupConvosWithInvite(
     // Create a new conversation (this will be the owner conversation)
     const conversationName = params.name ?? "OpenClaw";
     const result = await client.createConversation(conversationName);
-
-    // Stop the temporary client
-    await client.stop();
 
     const privateKey = client.getPrivateKey();
 
@@ -64,10 +75,16 @@ export async function setupConvosWithInvite(
 
     await runtime?.config.write(newConfig);
 
+    // Keep running or stop based on option
+    if (!params.keepRunning) {
+      await client.stop();
+    }
+
     return {
       inviteUrl: result.inviteUrl,
       conversationId: result.conversationId,
       privateKey,
+      client: params.keepRunning ? client : undefined,
     };
   } catch (err) {
     await client.stop();

@@ -65,37 +65,46 @@ export function renderConvosCard(params: {
       }
 
       ${
-        props.convosInviteUrl
-          ? html`<div class="callout" style="margin-top: 12px;">
+        props.convosJoined
+          ? html`<div class="callout success" style="margin-top: 12px;">
             <div style="text-align: center; padding: 12px;">
-              <p style="font-weight: bold; margin-bottom: 12px;">Open with Convos iOS App</p>
-              <div style="margin-bottom: 12px;">
-                <input
-                  type="text"
-                  readonly
-                  .value=${props.convosInviteUrl}
-                  style="width: 100%; font-family: monospace; font-size: 0.85rem; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"
-                  @click=${(e: Event) => (e.target as HTMLInputElement).select()}
-                />
-              </div>
-              <div>
-                <a
-                  href=${props.convosInviteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="btn"
-                  style="display: inline-block; text-decoration: none;"
-                >
-                  Open Invite Link
-                </a>
-              </div>
-              <p style="margin-top: 12px; font-size: 0.85rem; color: #666;">
-                Copy this link and open it on your phone, or click to open in a new tab.
-                After joining, accept the request in the Convos app.
+              <p style="font-weight: bold; color: #22c55e;">Connected!</p>
+              <p style="margin-top: 8px; font-size: 0.85rem; color: #666;">
+                You can now send and receive messages through Convos.
               </p>
             </div>
           </div>`
-          : nothing
+          : props.convosInviteUrl
+            ? html`<div class="callout" style="margin-top: 12px;">
+              <div style="text-align: center; padding: 12px;">
+                <p style="font-weight: bold; margin-bottom: 12px;">Open with Convos iOS App</p>
+                <div style="margin-bottom: 12px;">
+                  <input
+                    type="text"
+                    readonly
+                    .value=${props.convosInviteUrl}
+                    style="width: 100%; font-family: monospace; font-size: 0.85rem; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"
+                    @click=${(e: Event) => (e.target as HTMLInputElement).select()}
+                  />
+                </div>
+                <div>
+                  <a
+                    href=${props.convosInviteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn"
+                    style="display: inline-block; text-decoration: none;"
+                  >
+                    Open Invite Link
+                  </a>
+                </div>
+                <p style="margin-top: 12px; font-size: 0.85rem; color: #666;">
+                  Copy this link and open it on your phone, or click to open in a new tab.
+                  After joining, accept the request in the Convos app.
+                </p>
+              </div>
+            </div>`
+            : nothing
       }
 
       <div class="row" style="margin-top: 14px; flex-wrap: wrap;">

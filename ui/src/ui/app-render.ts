@@ -268,6 +268,7 @@ export function renderApp(state: AppViewState) {
                 convosMessage: state.convosMessage,
                 convosInviteUrl: state.convosInviteUrl,
                 convosBusy: state.convosBusy,
+                convosJoined: state.convosJoined,
                 configSchema: state.configSchema,
                 configSchemaLoading: state.configSchemaLoading,
                 configForm: state.configForm,

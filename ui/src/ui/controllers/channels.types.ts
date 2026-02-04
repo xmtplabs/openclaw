@@ -15,4 +15,5 @@ export type ChannelsState = {
   convosMessage: string | null;
   convosInviteUrl: string | null;
   convosBusy: boolean;
+  convosJoined: boolean;
 };
