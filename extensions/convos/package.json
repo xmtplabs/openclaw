@@ -1,0 +1,34 @@
+{
+  "name": "@openclaw/convos",
+  "version": "2026.2.2",
+  "description": "OpenClaw Convos channel plugin (E2E encrypted messaging via XMTP)",
+  "type": "module",
+  "dependencies": {
+    "convos-node-sdk": "github:xmtplabs/convos-node-sdk",
+    "@xmtp/agent-sdk": "^2.0.1"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "convos",
+      "label": "Convos",
+      "selectionLabel": "Convos (XMTP)",
+      "docsPath": "/channels/convos",
+      "docsLabel": "convos",
+      "blurb": "E2E encrypted messaging via XMTP",
+      "systemImage": "lock.shield.fill",
+      "order": 75,
+      "quickstartAllowFrom": false
+    },
+    "install": {
+      "npmSpec": "@openclaw/convos",
+      "localPath": "extensions/convos",
+      "defaultChoice": "local"
+    }
+  }
+}
