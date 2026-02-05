@@ -146,7 +146,7 @@ export class ConvosSDKClient {
             conversationId: ctx.conversation.id,
             messageId: ctx.message.id,
             senderId,
-            senderName: senderId, // SDK doesn't expose display name directly
+            senderName: "", // SDK doesn't expose display name; channel.ts falls back to truncated senderId
             content,
             timestamp: dateFromSentAtNs(readSentAtNs(ctx.message)),
           };
@@ -324,7 +324,7 @@ export class ConvosSDKClient {
           id: msg.id,
           conversationId,
           senderId: msg.senderInboxId,
-          senderName: msg.senderInboxId,
+          senderName: "",
           content,
           timestamp: dateFromSentAtNs(readSentAtNs(msg)).toISOString(),
         };
