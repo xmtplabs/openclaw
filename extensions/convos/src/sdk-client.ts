@@ -3,10 +3,10 @@
  * Replaces the daemon HTTP client with direct SDK integration
  */
 
+import { Agent, createUser, createSigner, encodeText, type MessageContext } from "@xmtp/agent-sdk";
+import { ConvosMiddleware, type InviteContext } from "convos-node-sdk";
 import fs from "node:fs";
 import path from "node:path";
-import { Agent, createUser, createSigner, type MessageContext } from "@xmtp/agent-sdk";
-import { ConvosMiddleware, type InviteContext } from "convos-node-sdk";
 import type {
   ConversationInfo,
   JoinConversationResult,
@@ -126,12 +126,7 @@ export class ConvosSDKClient {
   private running = false;
   private debug: boolean;
 
-  private constructor(
-    agent: Agent,
-    convos: ConvosMiddleware,
-    userKey: string,
-    debug: boolean,
-  ) {
+  private constructor(agent: Agent, convos: ConvosMiddleware, userKey: string, debug: boolean) {
     this.agent = agent;
     this.convos = convos;
     this.userKey = userKey;
@@ -413,9 +408,10 @@ export class ConvosSDKClient {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const messageId = await conversation.send(message);
+    // send() expects encoded content (type + content bytes), not a raw string.
+    await conversation.send(encodeText(message));
 
-    return { success: true, messageId: typeof messageId === "string" ? messageId : undefined };
+    return { success: true };
   }
 
   /**
