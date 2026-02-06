@@ -6,6 +6,7 @@ import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk"
 import type { ConvosSDKClient } from "./src/sdk-client.js";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
 import { convosPlugin } from "./src/channel.js";
+import { registerConvosCommands } from "./src/convos-commands.js";
 import { getConvosRuntime, setConvosRuntime, setConvosSetupActive } from "./src/runtime.js";
 import { resolveConvosDbPath } from "./src/sdk-client.js";
 import { setupConvosWithInvite } from "./src/setup.js";
@@ -248,6 +249,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setConvosRuntime(api.runtime);
     api.registerChannel({ plugin: convosPlugin });
+    registerConvosCommands(api);
 
     // ---- WebSocket gateway methods (for Control UI) ----
 

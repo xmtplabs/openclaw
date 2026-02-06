@@ -2,6 +2,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { xmtpPlugin } from "./src/channel.js";
 import { setXmtpRuntime } from "./src/runtime.js";
+import { registerXmtpCommands } from "./src/xmtp-commands.js";
 
 const plugin = {
   id: "xmtp",
@@ -11,6 +12,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setXmtpRuntime(api.runtime);
     api.registerChannel({ plugin: xmtpPlugin });
+    registerXmtpCommands(api);
   },
 };
 

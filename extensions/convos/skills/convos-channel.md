@@ -37,6 +37,17 @@ When OpenClaw is connected to Convos, there's a special "owner conversation" whe
 
 The owner conversation ID is stored in `channels.convos.ownerConversationId`.
 
+## Slash commands
+
+When the gateway is running, operators can use these commands from any channel (e.g. Convos, Telegram):
+
+| Command   | Args          | Description                                                                                 |
+| --------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `/invite` | Optional name | Create a new Convos conversation and get an invite link. Reply with the URL to share.       |
+| `/join`   | Required URL  | Join a Convos conversation via invite URL. Use the full invite link (e.g. from Convos app). |
+
+Both commands require authorization. If Convos is not configured or not running, the command replies with a short error message.
+
 ## Conversation Operations
 
 ### Listing Conversations
