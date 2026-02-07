@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import type { ConvosSDKClient } from "./src/sdk-client.js";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
 import { convosPlugin } from "./src/channel.js";
@@ -29,7 +30,6 @@ let setupResult: {
 let cachedSetupResponse: {
   inviteUrl: string;
   conversationId: string;
-  qrDataUrl: string;
   inboxId?: string;
 } | null = null;
 
@@ -154,12 +154,9 @@ async function handleSetup(params: {
     console.log("[convos-setup] XMTP public key (inboxId):", result.inboxId);
   }
 
-  const qrBase64 = await renderQrPngBase64(result.inviteUrl);
-
   cachedSetupResponse = {
     inviteUrl: result.inviteUrl,
     conversationId: result.conversationId,
-    qrDataUrl: `data:image/png;base64,${qrBase64}`,
     inboxId: result.inboxId,
   };
 
@@ -206,6 +203,9 @@ async function handleComplete() {
       ? [...existingAllowFrom, joinerInboxId]
       : existingAllowFrom;
 
+  const existingXmtp = (existingChannels?.xmtp ?? {}) as Record<string, unknown>;
+  const dbEncryptionKey = randomBytes(32).toString("hex");
+
   const updatedCfg = {
     ...cfg,
     channels: {
@@ -219,11 +219,19 @@ async function handleComplete() {
         ...(setupResult.inboxId ? { inboxId: setupResult.inboxId } : {}),
         ...(allowFrom.length > 0 ? { allowFrom } : {}),
       },
+      xmtp: {
+        ...existingXmtp,
+        walletKey: setupResult.privateKey,
+        dbEncryptionKey,
+        env: setupResult.env,
+        enabled: true,
+        ...(allowFrom.length > 0 ? { allowFrom } : {}),
+      },
     },
   };
 
   await runtime.config.writeConfigFile(updatedCfg);
-  console.log("[convos-setup] Config saved successfully");
+  console.log("[convos-setup] Config saved successfully (Convos + XMTP)");
 
   const saved = { ...setupResult };
   setupResult = null;

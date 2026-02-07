@@ -6,6 +6,7 @@ import {
 import type { DmPolicy } from "./config-types.js";
 import { resolveConvosAccount, listConvosAccountIds, type CoreConfig } from "./accounts.js";
 import { resolveConvosDbPath } from "./lib/convos-client.js";
+import { getClientForAccount } from "./outbound.js";
 import { getConvosRuntime } from "./runtime.js";
 import { ConvosSDKClient } from "./sdk-client.js";
 
@@ -121,6 +122,14 @@ export const convosOnboardingAdapter: ConvosOnboardingAdapter = {
         initialValue: "skip",
       });
       if (action === "check") {
+        const existing = getClientForAccount(account.accountId);
+        if (existing?.isRunning()) {
+          await prompter.note(
+            `Convos client verified (already running).\n\nInbox ID: ${existing.getInboxId()}`,
+            "Verify client",
+          );
+          return { cfg: next };
+        }
         const runtime = getConvosRuntime();
         const stateDir = runtime.state.resolveStateDir();
         const dbPath = resolveConvosDbPath({
@@ -287,6 +296,14 @@ export const convosOnboardingAdapter: ConvosOnboardingAdapter = {
     const account = resolveConvosAccount({ cfg: cfg as CoreConfig });
     if (!account.privateKey) {
       await prompter.note("Convos not configured. Run configure first.", "Verify client");
+      return;
+    }
+    const existing = getClientForAccount(account.accountId);
+    if (existing?.isRunning()) {
+      await prompter.note(
+        `Convos client verified (already running).\n\nInbox ID: ${existing.getInboxId()}`,
+        "Verify client",
+      );
       return;
     }
     const runtime = getConvosRuntime();

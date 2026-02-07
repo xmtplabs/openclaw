@@ -1,5 +1,6 @@
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId, type OpenClawConfig } from "openclaw/plugin-sdk";
 import type { XMTPConfig } from "./config-types.js";
+import { walletAddressFromPrivateKey } from "./lib/identity.js";
 
 export type CoreConfig = {
   channels?: {
@@ -17,6 +18,8 @@ export type ResolvedXmtpAccount = {
   dbEncryptionKey: string;
   env: "production" | "dev";
   debug: boolean;
+  /** Ethereum address; from config or derived from walletKey. */
+  publicAddress: string;
   config: XMTPConfig;
 };
 
@@ -63,6 +66,35 @@ function getAccountBase(cfg: CoreConfig, accountId: string): XMTPConfig {
   return section;
 }
 
+/**
+ * Return config with publicAddress set for the given account (for backfill).
+ * Writes to top-level xmtp or to xmtp.accounts[accountId] depending on structure.
+ */
+export function setAccountPublicAddress(
+  cfg: OpenClawConfig,
+  accountId: string,
+  publicAddress: string,
+): OpenClawConfig {
+  const section = (cfg.channels as CoreConfig["channels"])?.xmtp ?? {};
+  const accounts = section.accounts;
+  if (accounts && typeof accounts === "object" && accounts[accountId]) {
+    return {
+      ...cfg,
+      channels: {
+        ...cfg.channels,
+        xmtp: {
+          ...section,
+          accounts: {
+            ...accounts,
+            [accountId]: { ...accounts[accountId], publicAddress },
+          },
+        },
+      },
+    };
+  }
+  return updateXmtpSection(cfg, { publicAddress });
+}
+
 export function resolveXmtpAccount(params: {
   cfg: CoreConfig;
   accountId?: string | null;
@@ -71,6 +103,9 @@ export function resolveXmtpAccount(params: {
   const base = getAccountBase(params.cfg, accountId);
   const enabled = base.enabled !== false;
   const configured = Boolean(base.walletKey && base.dbEncryptionKey);
+
+  const publicAddress =
+    base.publicAddress ?? (base.walletKey ? walletAddressFromPrivateKey(base.walletKey) : "");
 
   return {
     accountId,
@@ -81,6 +116,7 @@ export function resolveXmtpAccount(params: {
     dbEncryptionKey: base.dbEncryptionKey ?? "",
     env: base.env === "dev" ? "dev" : "production",
     debug: base.debug ?? false,
+    publicAddress,
     config: base,
   };
 }

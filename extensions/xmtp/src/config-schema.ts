@@ -47,6 +47,9 @@ export const XMTPConfigSchema = z.object({
 
   /** Outbound text chunk size (chars). Default: 4000. */
   textChunkLimit: z.number().int().min(100).optional(),
+
+  /** Ethereum address for display; derived from walletKey if not set. */
+  publicAddress: z.string().optional(),
 });
 
 export type XMTPConfigInput = z.infer<typeof XMTPConfigSchema>;

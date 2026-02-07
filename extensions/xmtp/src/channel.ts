@@ -16,12 +16,12 @@ import {
   listXmtpAccountIds,
   resolveDefaultXmtpAccountId,
   resolveXmtpAccount,
+  setAccountPublicAddress,
   type CoreConfig,
   type ResolvedXmtpAccount,
 } from "./accounts.js";
 import { xmtpMessageActions } from "./actions.js";
 import { xmtpChannelConfigSchema } from "./config-schema.js";
-import { walletAddressFromPrivateKey } from "./lib/identity.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
 import { getClientForAccount, setClientForAccount, xmtpOutbound } from "./outbound.js";
@@ -276,7 +276,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         cfg,
         sectionKey: CHANNEL_ID,
         accountId,
-        clearBaseFields: ["name", "walletKey", "dbEncryptionKey", "env", "debug"],
+        clearBaseFields: ["name", "walletKey", "dbEncryptionKey", "env", "debug", "publicAddress"],
       }),
     isConfigured: (account) => account.configured,
     describeAccount: (account) => ({
@@ -285,6 +285,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       enabled: account.enabled,
       configured: account.configured,
       env: account.env,
+      publicAddress: account.publicAddress || undefined,
     }),
   },
   security: {
@@ -404,11 +405,17 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       ensureXmtpConfigured(account);
       const runtime = getXmtpRuntime();
 
+      if (!account.config.publicAddress) {
+        const cfg = runtime.config.loadConfig();
+        const next = setAccountPublicAddress(cfg, account.accountId, account.publicAddress);
+        await runtime.config.writeConfigFile(next);
+        log?.info(`[${account.accountId}] backfilled publicAddress to config`);
+      }
+
       setStatus({ accountId: account.accountId, env: account.env });
 
-      const publicAddress = walletAddressFromPrivateKey(account.walletKey);
       log?.info(
-        `[${account.accountId}] starting XMTP provider (env: ${account.env}, agent: ${publicAddress})`,
+        `[${account.accountId}] starting XMTP provider (env: ${account.env}, agent: ${account.publicAddress})`,
       );
 
       const stateDir = runtime.state.resolveStateDir();

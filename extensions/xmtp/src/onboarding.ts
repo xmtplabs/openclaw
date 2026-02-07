@@ -147,6 +147,7 @@ export const xmtpOnboardingAdapter: ChannelOnboardingAdapter = {
       walletKey,
       dbEncryptionKey,
       env,
+      publicAddress,
     });
 
     writeXmtpVarsToEnv({ walletKey, dbEncryptionKey, env });

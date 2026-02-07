@@ -29,6 +29,8 @@ export type XMTPAccountConfig = {
   groups?: string[];
   /** Outbound text chunk size (chars). Default: 4000. */
   textChunkLimit?: number;
+  /** Ethereum address for display; derived from walletKey if not set. */
+  publicAddress?: string;
 };
 
 export type XMTPConfig = {

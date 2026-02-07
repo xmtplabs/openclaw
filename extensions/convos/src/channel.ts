@@ -217,8 +217,6 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
         return { ok: true };
       }
 
-      // For SDK-based client, we verify by checking if we can create a client
-      // If privateKey is set, the account is considered healthy
       if (!account.privateKey) {
         return {
           ok: false,
@@ -226,14 +224,19 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
         };
       }
 
+      // Reuse running client if already started — avoids redundant create/start/stop
+      const existing = getClientForAccount(account.accountId);
+      if (existing?.isRunning()) {
+        return { ok: true };
+      }
+
       try {
-        // Create a temporary client to verify connectivity, with a timeout
         const limit = timeoutMs ?? 10000;
         const tempClient = await Promise.race([
           ConvosSDKClient.create({
             privateKey: account.privateKey,
             env: account.env,
-            dbPath: null, // in-memory for probe — no persistent state needed
+            dbPath: null,
             debug: account.debug,
           }),
           new Promise<never>((_, reject) =>
