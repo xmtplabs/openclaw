@@ -1,6 +1,6 @@
 /**
  * Types for XMTP agent runtime and message handling.
- * Agent from @xmtp/agent-sdk has no sendText; use agent.client.conversations.getConversationById then conversation.sendText.
+ * Agent from @xmtp/agent-sdk also has sendText(to, text) for sending to an address.
  */
 
 export interface XmtpConversation {
@@ -13,6 +13,7 @@ export interface XmtpClientConversations {
 
 export interface XmtpAgentRuntime {
   readonly client: { conversations: XmtpClientConversations };
+  sendText(to: string, text: string): Promise<void | string>;
   on(
     event: "text",
     handler: (ctx: {
