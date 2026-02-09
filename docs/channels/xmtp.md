@@ -12,6 +12,8 @@ The XMTP channel provides decentralized E2E encrypted messaging via the XMTP pro
 
 Status: supported via plugin. Direct messages, group conversations, media (remote attachments). No reactions or threads.
 
+**One-click deploy:** [Deploy on Railway](https://railway.com/deploy/xmtp-openclaw-template?referralCode=UxaXte&utm_medium=integration&utm_source=template&utm_campaign=generic) (OpenClaw + XMTP, then use `/setup` in the browser).
+
 ## Requirements
 
 - Wallet private key (or generate one via the configure wizard)
@@ -21,16 +23,12 @@ Status: supported via plugin. Direct messages, group conversations, media (remot
 
 XMTP ships as a plugin and is not bundled with the core install.
 
+> **Note:** The XMTP plugin is currently published under the `@xmtp` scope, not `@openclaw`. Use the install command below until native bundling is available.
+
 Install via CLI (npm registry):
 
 ```bash
-openclaw plugins install @openclaw/xmtp
-```
-
-Local checkout (when running from a git repo):
-
-```bash
-openclaw plugins install ./extensions/xmtp
+openclaw plugins install @xmtp/openclaw
 ```
 
 ## Setup
@@ -52,7 +50,15 @@ When prompted:
 
 OpenClaw initializes the XMTP client and shows your **public address** (derived from the wallet key). Share this address so others can message your agent.
 
-### 2. Manual config (optional)
+### 2. Start the agent
+
+```bash
+openclaw start
+# or with logs:
+openclaw start --debug
+```
+
+### 3. Manual config (optional)
 
 Add to `~/.openclaw/openclaw.json`:
 
@@ -96,28 +102,30 @@ For multiple XMTP identities, use `channels.xmtp.accounts.<id>` with the same fi
 
 ## Group Policies
 
-- `open` (default): Accept messages from all groups
-- `disabled`: Ignore all group messages
-- `allowlist`: Only allow conversations listed in `groups` (use `"*"` to allow all)
+- **`open`** (default): Accept messages from all groups. The `groups` array is ignored.
+- **`disabled`**: Ignore all group messages.
+- **`allowlist`**: Only accept messages from conversations listed in `groups`. Set `groups` to `["*"]` to allow all, or list specific conversation IDs.
 
-## Architecture
+Example (allowlist only; `groups` is unused when policy is `open` or `disabled`):
 
-```
-┌─────────────────────────────────────────┐
-│ OpenClaw Gateway                        │
-│  └── XMTP Channel Plugin                 │
-│       └── @xmtp/agent-sdk               │
-└────────────────┬────────────────────────┘
-                 │ XMTP Protocol
-                 ▼
-┌─────────────────────────────────────────┐
-│ XMTP Network                            │
-└─────────────────────────────────────────┘
+```json
+{
+  "channels": {
+    "xmtp": {
+      "groupPolicy": "allowlist",
+      "groups": ["*"]
+    }
+  }
+}
 ```
 
-### Wallet-based identity
+## Wallet-based identity
 
 The XMTP plugin uses one identity per account (derived from the wallet key). The agent-sdk reads credentials from environment variables: `XMTP_WALLET_KEY`, `XMTP_DB_ENCRYPTION_KEY`, `XMTP_ENV`, `XMTP_DB_DIRECTORY`. The plugin writes keys to `~/.openclaw/.env` for `Agent.createFromEnv()`.
+
+## Test your agent
+
+Use [xmtp.chat](https://xmtp.chat/) — connect with a wallet, start a new conversation, enter your agent's XMTP address, and send a message.
 
 ## Troubleshooting
 
@@ -143,13 +151,3 @@ If you see XMTP connection errors:
 | Threads             | No           |
 | Media/attachments   | Yes (remote) |
 | E2E encryption      | Yes (XMTP)   |
-
-## Cross-Platform Deployment
-
-The XMTP channel uses the @xmtp/agent-sdk and runs on any platform with Node.js support:
-
-- macOS
-- Linux (including containers)
-- Windows
-
-This makes it suitable for deployment to Railway, Fly.io, or any containerized environment.

@@ -20,16 +20,12 @@ Status: supported via plugin. Group conversations, reactions.
 
 Convos ships as a plugin and is not bundled with the core install.
 
+> **Note:** The Convos plugin is currently published under the `@xmtp` scope, not `@openclaw`. Use the install command below until native bundling is available.
+
 Install via CLI (npm registry):
 
 ```bash
-openclaw plugins install @openclaw/convos
-```
-
-Local checkout (when running from a git repo):
-
-```bash
-openclaw plugins install ./extensions/convos
+openclaw plugins install @xmtp/convos-openclaw
 ```
 
 ## Setup
@@ -59,7 +55,15 @@ When prompted, paste the invite link. OpenClaw will:
 2. Join the conversation
 3. Save the configuration
 
-Or manually add to `~/.openclaw/openclaw.json`:
+### 3. Start the agent
+
+```bash
+openclaw start
+# or with logs:
+openclaw start --debug
+```
+
+**Manual config (optional)** — add to `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -104,7 +108,7 @@ Or manually add to `~/.openclaw/openclaw.json`:
                  ▼
 ┌─────────────────────────────────────────┐
 │ XMTP Network                            │
-└─────────────────────────────────────────┘
+└────────────────────────────────────────┘
 ```
 
 ### Per-Conversation Identity
@@ -165,12 +169,6 @@ If you see XMTP connection errors:
 | Media/attachments   | Not yet    |
 | E2E encryption      | Yes (XMTP) |
 
-## Cross-Platform Deployment
+**One-click deploy:** [Deploy on Railway](https://railway.com/deploy/convos-openclaw-template?referralCode=UxaXte&utm_medium=integration&utm_source=template&utm_campaign=generic) (OpenClaw + Convos, then use `/setup` in the browser).
 
-The Convos channel uses the convos-node-sdk which runs on any platform with Node.js support:
-
-- macOS
-- Linux (including containers)
-- Windows
-
-This makes it suitable for deployment to Railway, Fly.io, or any containerized environment.
+**Test your agent:** Message in the Convos iOS app in the conversation you invited OpenClaw to.
