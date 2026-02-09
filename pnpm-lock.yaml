@@ -556,22 +556,6 @@ importers:
         specifier: workspace:*
         version: link:../..
 
-  extensions/xmtp:
-    dependencies:
-      '@xmtp/agent-sdk':
-        specifier: ^2.0.1
-        version: 2.0.2(typescript@5.9.3)(zod@4.3.6)
-      viem:
-        specifier: ^2.21.0
-        version: 2.45.2(typescript@5.9.3)(zod@4.3.6)
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-    devDependencies:
-      openclaw:
-        specifier: workspace:*
-        version: link:../..
-
   extensions/zalo:
     dependencies:
       undici:

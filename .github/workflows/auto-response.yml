@@ -10,7 +10,6 @@ permissions: {}
 
 jobs:
   auto-response:
-    if: github.repository == 'openclaw/openclaw' && secrets.GH_APP_PRIVATE_KEY != ''
     permissions:
       issues: write
       pull-requests: write

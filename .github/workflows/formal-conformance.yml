@@ -9,7 +9,6 @@ concurrency:
 
 jobs:
   formal_conformance:
-    if: github.repository == 'openclaw/openclaw'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

@@ -12,7 +12,6 @@ concurrency:
 
 jobs:
   docs-scope:
-    if: github.repository == 'openclaw/openclaw'
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.check.outputs.docs_only }}
