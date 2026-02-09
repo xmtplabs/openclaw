@@ -354,6 +354,25 @@ export class ConvosSDKClient {
   }
 
   /**
+   * Rename a conversation and update the agent's profile name within it.
+   */
+  async renameConversation(conversationId: string, name: string): Promise<void> {
+    const conversation = await this.agent.client.conversations.getConversationById(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+
+    const convosGroup = this.convos.group(conversation);
+
+    // Update the agent's member display name in the conversation
+    await convosGroup.setConversationProfile({ name });
+
+    if (this.debug) {
+      console.log(`[convos-sdk] Renamed conversation ${conversationId} to "${name}"`);
+    }
+  }
+
+  /**
    * Get or create invite slug for a conversation
    */
   async getInvite(conversationId: string): Promise<InviteResult> {
