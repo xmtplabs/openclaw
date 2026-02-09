@@ -190,6 +190,7 @@ export function buildAgentSystemPrompt(params: {
     node?: string;
     model?: string;
     defaultModel?: string;
+    shell?: string;
     channel?: string;
     capabilities?: string[];
     repoRoot?: string;
@@ -626,6 +627,7 @@ export function buildRuntimeLine(
     node?: string;
     model?: string;
     defaultModel?: string;
+    shell?: string;
     repoRoot?: string;
   },
   runtimeChannel?: string,
@@ -644,6 +646,7 @@ export function buildRuntimeLine(
     runtimeInfo?.node ? `node=${runtimeInfo.node}` : "",
     runtimeInfo?.model ? `model=${runtimeInfo.model}` : "",
     runtimeInfo?.defaultModel ? `default_model=${runtimeInfo.defaultModel}` : "",
+    runtimeInfo?.shell ? `shell=${runtimeInfo.shell}` : "",
     runtimeChannel ? `channel=${runtimeChannel}` : "",
     runtimeChannel
       ? `capabilities=${runtimeCapabilities.length > 0 ? runtimeCapabilities.join(",") : "none"}`

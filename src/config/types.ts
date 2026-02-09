@@ -11,7 +11,6 @@ export * from "./types.convos.js";
 export * from "./types.openclaw.js";
 export * from "./types.cron.js";
 export * from "./types.discord.js";
-export * from "./types.feishu.js";
 export * from "./types.googlechat.js";
 export * from "./types.gateway.js";
 export * from "./types.hooks.js";
