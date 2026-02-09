@@ -277,11 +277,13 @@ export class ConvosSDKClient {
     }
 
     try {
-      // Snapshot existing conversation IDs so we can detect the newly joined one.
-      // convos.join() returns the invite token as conversationId, which is NOT the
-      // XMTP group ID used by getConversationById(). We diff the list instead.
+      // Snapshot existing group IDs so we can detect the newly joined one.
+      // convos.join() returns the invite token as conversationId, NOT the XMTP
+      // group ID. We diff listGroups() before/after to find the real group.
+      // listGroups() returns proper Group objects (with updateAppData), unlike
+      // list() or getConversationById() which return lightweight Conversation objects.
       const beforeIds = new Set(
-        (await this.agent.client.conversations.list()).map((c) => c.id),
+        this.agent.client.conversations.listGroups().map((g) => g.id),
       );
 
       const result = await this.convos.join(invite);
@@ -301,26 +303,22 @@ export class ConvosSDKClient {
         // best-effort
       }
 
-      // Find the new conversation by diffing before/after.
-      const afterConvos = await this.agent.client.conversations.list();
-      const newConvo = afterConvos.find((c) => !beforeIds.has(c.id));
+      // Find the new group by diffing before/after.
+      const newGroup = this.agent.client.conversations
+        .listGroups()
+        .find((g) => !beforeIds.has(g.id));
 
-      if (newConvo) {
-        console.log(`[convos-sdk] Joined group: ${newConvo.id}`);
+      if (newGroup) {
+        console.log(`[convos-sdk] Joined group: ${newGroup.id}`);
 
-        // Set the agent's display name immediately, same as createConversation().
-        // Must use getConversationById() to get the full object — list() returns
-        // lightweight objects without updateAppData().
+        // Set the agent's display name immediately — same pattern as createConversation().
         if (name) {
-          const fullConvo = await this.agent.client.conversations.getConversationById(newConvo.id);
-          if (fullConvo) {
-            const convosGroup = this.convos.group(fullConvo);
-            await convosGroup.setConversationProfile({ name });
-            console.log(`[convos-sdk] Set profile name: "${name}"`);
-          }
+          const convosGroup = this.convos.group(newGroup);
+          await convosGroup.setConversationProfile({ name });
+          console.log(`[convos-sdk] Set profile name: "${name}"`);
         }
 
-        return { status: "joined", conversationId: newConvo.id };
+        return { status: "joined", conversationId: newGroup.id };
       }
 
       // Fallback: return the raw SDK result (rename/send may not work).
