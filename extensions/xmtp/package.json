@@ -1,0 +1,34 @@
+{
+  "name": "@openclaw/xmtp",
+  "version": "2026.2.4",
+  "description": "XMTP decentralized messaging channel",
+  "type": "module",
+  "dependencies": {
+    "@xmtp/agent-sdk": "^2.0.1",
+    "viem": "^2.21.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "xmtp",
+      "label": "XMTP",
+      "selectionLabel": "XMTP (Agent SDK)",
+      "docsPath": "/channels/xmtp",
+      "docsLabel": "xmtp",
+      "blurb": "Decentralized messaging via XMTP protocol",
+      "systemImage": "network",
+      "order": 76
+    },
+    "install": {
+      "npmSpec": "@openclaw/xmtp",
+      "localPath": "extensions/xmtp",
+      "defaultChoice": "local"
+    }
+  }
+}

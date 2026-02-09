@@ -1,0 +1,9 @@
+{
+  "id": "convos",
+  "channels": ["convos"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

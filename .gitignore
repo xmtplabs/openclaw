@@ -4,6 +4,7 @@ node_modules
 docker-compose.extra.yml
 dist
 pnpm-lock.yaml
+.cursor/
 bun.lock
 bun.lockb
 coverage
