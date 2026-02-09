@@ -287,30 +287,30 @@ export class ConvosSDKClient {
         return { status: "waiting_for_acceptance", conversationId: null };
       }
 
-      // Set the agent's display name — same pattern as createConversation().
       // convos.join() returns the invite token as conversationId (not the XMTP
-      // group ID), so we find the group via listGroups() which returns proper
-      // Group objects with updateAppData().
-      if (name) {
-        try {
-          await this.agent.client.conversations.sync();
-          const groups = this.agent.client.conversations.listGroups();
-          // The most recently joined group is the one we want.
-          const group = groups[groups.length - 1];
-          if (group) {
+      // group ID). Resolve the real group ID via listGroups() so callers can
+      // use it for send/rename. listGroups() also returns proper Group objects
+      // with updateAppData(), needed for setConversationProfile().
+      let conversationId: string = result.conversationId;
+      try {
+        await this.agent.client.conversations.sync();
+        const groups = this.agent.client.conversations.listGroups();
+        const group = groups[groups.length - 1];
+        if (group) {
+          conversationId = group.id;
+          console.log(`[convos-sdk] Resolved group ID: ${group.id}`);
+
+          if (name) {
             const convosGroup = this.convos.group(group);
             await convosGroup.setConversationProfile({ name });
             console.log(`[convos-sdk] Set profile name: "${name}"`);
           }
-        } catch (err) {
-          console.warn(`[convos-sdk] Failed to set profile name:`, err);
         }
+      } catch (err) {
+        console.warn(`[convos-sdk] Failed to resolve group / set profile:`, err);
       }
 
-      return {
-        status: "joined",
-        conversationId: result.conversationId,
-      };
+      return { status: "joined", conversationId };
     } catch (err) {
       if (this.debug) {
         console.error(`[convos-sdk] Join failed:`, err);
