@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   no-tabs:
+    if: github.repository == 'openclaw/openclaw'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

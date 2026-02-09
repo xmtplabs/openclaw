@@ -14,6 +14,7 @@ env:
 jobs:
   # Build amd64 image
   build-amd64:
+    if: github.repository == 'openclaw/openclaw'
     runs-on: ubuntu-latest
     permissions:
       packages: write
