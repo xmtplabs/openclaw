@@ -48,6 +48,8 @@ export type ConvosAccountConfig = {
   ownerConversationId?: string;
   /** XMTP public address (inbox ID) for display. */
   inboxId?: string;
+  /** Optional system prompt for this channel (same pattern as Discord/Telegram/Slack). */
+  systemPrompt?: string;
 };
 
 export type ConvosConfig = {

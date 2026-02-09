@@ -68,6 +68,9 @@ export const ConvosConfigSchema = z.object({
 
   /** Invite URL for joining the owner conversation (displayed as QR). */
   inviteUrl: z.string().optional(),
+
+  /** Optional system prompt for this channel (same pattern as Discord/Telegram/Slack). */
+  systemPrompt: z.string().optional(),
 });
 
 export type ConvosConfigInput = z.infer<typeof ConvosConfigSchema>;

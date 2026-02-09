@@ -427,6 +427,9 @@ async function handleInboundMessage(
     body: rawBody,
   });
 
+  // Resolve channel-level system prompt (same pattern as Discord/Telegram/Slack)
+  const systemPrompt = account.config.systemPrompt?.trim() || undefined;
+
   // Build the finalized inbound context with all required fields
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
@@ -443,6 +446,7 @@ async function handleInboundMessage(
     Provider: "convos",
     Surface: "convos",
     MessageSid: msg.messageId,
+    GroupSystemPrompt: systemPrompt,
     OriginatingChannel: "convos",
     OriginatingTo: `convos:${msg.conversationId}`,
   });
