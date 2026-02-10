@@ -277,6 +277,10 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
         `[${account.accountId}] XMTP stateDir: ${stateDir}, cwd: ${process.cwd()}, dbPath: ${dbPath}`,
       );
 
+      // Track conversations that have already received a greeting so we
+      // only greet the first user who joins, not every subsequent invite.
+      const greetedConversations = new Set<string>();
+
       // Create SDK client with message handling
       const client = await ConvosSDKClient.create({
         privateKey: account.privateKey,
@@ -294,6 +298,22 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
           // TODO: Add policy-based handling
           log?.info(`[${account.accountId}] Auto-accepting invite request`);
           await inviteCtx.accept();
+
+          // Greet only the first user who joins each conversation.
+          if (!greetedConversations.has(inviteCtx.conversationId)) {
+            greetedConversations.add(inviteCtx.conversationId);
+            triggerGreeting({
+              account,
+              conversationId: inviteCtx.conversationId,
+              senderId: inviteCtx.joinerInboxId,
+              context:
+                "[System] You've just created this group and a user has just joined. Introduce yourself concisely.",
+              runtime,
+              log,
+            }).catch((err) => {
+              log?.error(`[${account.accountId}] Greeting generation failed: ${String(err)}`);
+            });
+          }
         },
       });
 
@@ -506,6 +526,31 @@ async function deliverConvosReply(params: {
       }
     }
   }
+}
+
+/**
+ * Trigger a generated greeting by feeding a synthetic system message through
+ * the normal reply pipeline. The agent will produce a contextual introduction
+ * based on its instructions / system prompt.
+ */
+export async function triggerGreeting(params: {
+  account: ResolvedConvosAccount;
+  conversationId: string;
+  senderId: string;
+  context: string;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}): Promise<void> {
+  const { account, conversationId, senderId, context, runtime, log } = params;
+  const syntheticMsg: InboundMessage = {
+    conversationId,
+    messageId: `greeting-${Date.now()}`,
+    senderId,
+    senderName: "",
+    content: context,
+    timestamp: new Date(),
+  };
+  await handleInboundMessage(account, syntheticMsg, runtime, log);
 }
 
 /**
