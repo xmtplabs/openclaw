@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk";
 import type { ConvosSDKClient } from "./src/sdk-client.js";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
-import { convosPlugin } from "./src/channel.js";
+import { convosPlugin, triggerGreeting } from "./src/channel.js";
 import { getClientForAccount } from "./src/outbound.js";
 import { getConvosRuntime, setConvosRuntime, setConvosSetupActive } from "./src/runtime.js";
 import { resolveConvosDbPath } from "./src/sdk-client.js";
@@ -446,6 +446,21 @@ const plugin = {
           }
 
           const result = await client.joinConversation(inviteUrl, name);
+
+          // Trigger a generated greeting in the background after joining.
+          if (result.status === "joined") {
+            triggerGreeting({
+              account,
+              conversationId: result.conversationId,
+              senderId: "system",
+              context:
+                "[System] You've just been added to a user's pre-existing chat. Introduce yourself concisely.",
+              runtime,
+            }).catch((err) => {
+              console.error("[convos-join] Greeting generation failed:", err);
+            });
+          }
+
           jsonResponse(res, 200, {
             conversationId: result.conversationId,
             status: result.status,
@@ -467,7 +482,8 @@ const plugin = {
         }
         try {
           const body = await readJsonBody(req);
-          const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
+          const conversationId =
+            typeof body.conversationId === "string" ? body.conversationId : undefined;
           const message = typeof body.message === "string" ? body.message : undefined;
           if (!conversationId || !message) {
             jsonResponse(res, 400, { error: "conversationId and message (strings) are required" });
@@ -505,7 +521,8 @@ const plugin = {
         }
         try {
           const body = await readJsonBody(req);
-          const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
+          const conversationId =
+            typeof body.conversationId === "string" ? body.conversationId : undefined;
           const name = typeof body.name === "string" ? body.name : undefined;
 
           if (!conversationId) {
