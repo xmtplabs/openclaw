@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
 import { convosPlugin } from "./src/channel.js";
@@ -133,7 +133,7 @@ async function handleComplete() {
   }
 
   const runtime = getConvosRuntime();
-  const cfg = runtime.config.loadConfig() as OpenClawConfig;
+  const cfg = runtime.config.loadConfig();
 
   const existingChannels = (cfg as Record<string, unknown>).channels as
     | Record<string, unknown>
@@ -180,9 +180,13 @@ async function handleComplete() {
 
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  for await (const chunk of req) {
+    chunks.push(chunk as Buffer);
+  }
   const raw = Buffer.concat(chunks).toString();
-  if (!raw.trim()) return {};
+  if (!raw.trim()) {
+    return {};
+  }
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
@@ -207,12 +211,11 @@ const plugin = {
 
     api.registerGatewayMethod("convos.setup", async ({ params, respond }) => {
       try {
-        const p = params as Record<string, unknown>;
         const result = await handleSetup({
-          accountId: typeof p.accountId === "string" ? p.accountId : undefined,
-          env: typeof p.env === "string" ? (p.env as "production" | "dev") : undefined,
-          name: typeof p.name === "string" ? p.name : undefined,
-          force: p.force === true,
+          accountId: typeof params.accountId === "string" ? params.accountId : undefined,
+          env: typeof params.env === "string" ? (params.env as "production" | "dev") : undefined,
+          name: typeof params.name === "string" ? params.name : undefined,
+          force: params.force === true,
         });
         respond(true, result, undefined);
       } catch (err) {
@@ -247,10 +250,9 @@ const plugin = {
 
     api.registerGatewayMethod("convos.reset", async ({ params, respond }) => {
       try {
-        const p = params as Record<string, unknown>;
         const result = await handleSetup({
-          accountId: typeof p.accountId === "string" ? p.accountId : undefined,
-          env: typeof p.env === "string" ? (p.env as "production" | "dev") : undefined,
+          accountId: typeof params.accountId === "string" ? params.accountId : undefined,
+          env: typeof params.env === "string" ? (params.env as "production" | "dev") : undefined,
           force: true,
         });
         respond(true, result, undefined);
@@ -350,7 +352,7 @@ const plugin = {
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
 
           const runtime = getConvosRuntime();
-          const cfg = runtime.config.loadConfig() as OpenClawConfig;
+          const cfg = runtime.config.loadConfig();
           const account = resolveConvosAccount({ cfg: cfg as CoreConfig, accountId });
 
           const { instance, result } = await ConvosInstance.create(account.env, {
@@ -421,7 +423,7 @@ const plugin = {
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
 
           const runtime = getConvosRuntime();
-          const cfg = runtime.config.loadConfig() as OpenClawConfig;
+          const cfg = runtime.config.loadConfig();
           const account = resolveConvosAccount({ cfg: cfg as CoreConfig, accountId });
 
           const { instance, status, conversationId } = await ConvosInstance.join(

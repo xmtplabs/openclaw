@@ -3,7 +3,6 @@
  * Config is NOT written here; the caller persists config after join is confirmed.
  */
 
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { ConvosSetupResult } from "./types.js";
 import { resolveConvosAccount, type CoreConfig } from "./accounts.js";
 import { getConvosRuntime } from "./runtime.js";
@@ -31,7 +30,7 @@ export async function setupConvosWithInvite(
   options?: ConvosInstanceOptions,
 ): Promise<SetupConvosResultWithClient> {
   const runtime = getConvosRuntime();
-  const cfg = runtime.config.loadConfig() as OpenClawConfig;
+  const cfg = runtime.config.loadConfig();
   const account = resolveConvosAccount({ cfg: cfg as CoreConfig, accountId: params.accountId });
   const env = params.env ?? account.env;
   const name = params.name ?? "OpenClaw";

@@ -38,7 +38,9 @@ let cachedBinPath: string | undefined;
 
 /** Resolve the `convos` CLI binary from the installed @convos/cli package. */
 function resolveConvosBin(): string {
-  if (cachedBinPath) return cachedBinPath;
+  if (cachedBinPath) {
+    return cachedBinPath;
+  }
   try {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@convos/cli/package.json");
@@ -89,7 +91,9 @@ export class ConvosInstance {
   private async exec(args: string[]): Promise<string> {
     const bin = resolveConvosBin();
     const finalArgs = [...args, "--env", this.env];
-    if (this.debug) console.log(`[convos] exec: convos ${finalArgs.join(" ")}`);
+    if (this.debug) {
+      console.log(`[convos] exec: convos ${finalArgs.join(" ")}`);
+    }
     const { stdout } = await execFileAsync(
       bin === "convos" ? bin : process.execPath,
       bin === "convos" ? finalArgs : [bin, ...finalArgs],
@@ -108,7 +112,9 @@ export class ConvosInstance {
   private spawnChild(args: string[]): ChildProcess {
     const bin = resolveConvosBin();
     const finalArgs = [...args, "--env", this.env, "--json"];
-    if (this.debug) console.log(`[convos] spawn: convos ${finalArgs.join(" ")}`);
+    if (this.debug) {
+      console.log(`[convos] spawn: convos ${finalArgs.join(" ")}`);
+    }
     const child = spawn(
       bin === "convos" ? bin : process.execPath,
       bin === "convos" ? finalArgs : [bin, ...finalArgs],
@@ -141,8 +147,12 @@ export class ConvosInstance {
     options?: ConvosInstanceOptions,
   ): Promise<{ instance: ConvosInstance; result: CreateConversationResult }> {
     const args = ["conversations", "create"];
-    if (params?.name) args.push("--name", params.name);
-    if (params?.profileName) args.push("--profile-name", params.profileName);
+    if (params?.name) {
+      args.push("--name", params.name);
+    }
+    if (params?.profileName) {
+      args.push("--profile-name", params.profileName);
+    }
 
     // Use a temporary instance to access exec helpers
     const tmp = new ConvosInstance({
@@ -189,7 +199,9 @@ export class ConvosInstance {
     identityId: string | null;
   }> {
     const args = ["conversations", "join", invite];
-    if (params?.profileName) args.push("--profile-name", params.profileName);
+    if (params?.profileName) {
+      args.push("--profile-name", params.profileName);
+    }
     args.push("--timeout", String(params?.timeout ?? 60));
 
     const tmp = new ConvosInstance({
@@ -233,7 +245,9 @@ export class ConvosInstance {
   // ==== Lifecycle ====
 
   async start(): Promise<void> {
-    if (this.running) return;
+    if (this.running) {
+      return;
+    }
     this.running = true;
 
     // Stream messages from this conversation
@@ -241,21 +255,25 @@ export class ConvosInstance {
     this.pumpJsonLines(streamChild, "stream", (data) => {
       // Skip empty/non-text content
       const content = typeof data.content === "string" ? data.content : "";
-      if (!content.trim()) return;
+      if (!content.trim()) {
+        return;
+      }
 
       const msg: InboundMessage = {
         conversationId: this.conversationId,
-        messageId: (data.id as string) ?? "",
-        senderId: (data.senderInboxId as string) ?? "",
+        messageId: typeof data.id === "string" ? data.id : "",
+        senderId: typeof data.senderInboxId === "string" ? data.senderInboxId : "",
         senderName: "",
         content,
-        timestamp: data.sentAt ? new Date(data.sentAt as string) : new Date(),
+        timestamp: typeof data.sentAt === "string" ? new Date(data.sentAt) : new Date(),
       };
       queueMicrotask(() => {
         try {
           this.onMessage?.(msg);
         } catch (err) {
-          if (this.debug) console.error("[convos] onMessage error:", err);
+          if (this.debug) {
+            console.error("[convos] onMessage error:", err);
+          }
         }
       });
     });
@@ -271,8 +289,11 @@ export class ConvosInstance {
     ]);
     this.pumpJsonLines(joinChild, "join-requests", (data) => {
       if (data.event === "join_request_accepted" && data.joinerInboxId) {
-        if (this.debug) console.log(`[convos] Join accepted: ${data.joinerInboxId}`);
-        this.onJoinAccepted?.({ joinerInboxId: data.joinerInboxId as string });
+        const joinerInboxId = typeof data.joinerInboxId === "string" ? data.joinerInboxId : "";
+        if (this.debug) {
+          console.log(`[convos] Join accepted: ${joinerInboxId}`);
+        }
+        this.onJoinAccepted?.({ joinerInboxId });
       }
     });
 
@@ -282,7 +303,9 @@ export class ConvosInstance {
   }
 
   async stop(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running) {
+      return;
+    }
     this.running = false;
     for (const child of this.children) {
       try {
@@ -292,7 +315,9 @@ export class ConvosInstance {
       }
     }
     this.children = [];
-    if (this.debug) console.log(`[convos] Stopped: ${this.conversationId.slice(0, 12)}...`);
+    if (this.debug) {
+      console.log(`[convos] Stopped: ${this.conversationId.slice(0, 12)}...`);
+    }
   }
 
   isRunning(): boolean {
@@ -362,7 +387,9 @@ export class ConvosInstance {
     label: string,
     handler: (data: Record<string, unknown>) => void,
   ): void {
-    if (!child.stdout) return;
+    if (!child.stdout) {
+      return;
+    }
 
     const rl = createInterface({ input: child.stdout });
     rl.on("line", (line) => {
@@ -371,7 +398,9 @@ export class ConvosInstance {
         handler(data);
       } catch {
         // Non-JSON line (e.g. human-readable output) — skip
-        if (this.debug) console.log(`[convos:${label}] non-JSON: ${line}`);
+        if (this.debug) {
+          console.log(`[convos:${label}] non-JSON: ${line}`);
+        }
       }
     });
 
@@ -384,7 +413,9 @@ export class ConvosInstance {
     if (child.stderr) {
       const errRl = createInterface({ input: child.stderr });
       errRl.on("line", (line) => {
-        if (this.debug) console.error(`[convos:${label}:stderr] ${line}`);
+        if (this.debug) {
+          console.error(`[convos:${label}:stderr] ${line}`);
+        }
       });
     }
   }

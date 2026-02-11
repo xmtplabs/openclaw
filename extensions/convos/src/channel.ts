@@ -3,7 +3,6 @@ import {
   deleteAccountFromConfigSection,
   setAccountEnabledInConfigSection,
   type ChannelPlugin,
-  type OpenClawConfig,
   type PluginRuntime,
   type ReplyPayload,
 } from "openclaw/plugin-sdk";
@@ -110,15 +109,19 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
     idLabel: "inbox ID",
     normalizeAllowEntry: (entry) => {
       const trimmed = entry.trim();
-      if (!trimmed) return trimmed;
+      if (!trimmed) {
+        return trimmed;
+      }
       if (trimmed.toLowerCase().startsWith("convos:")) {
         return trimmed.slice("convos:".length).trim();
       }
       return trimmed;
     },
-    notifyApproval: async ({ cfg, id }) => {
+    notifyApproval: async ({ id }) => {
       const inst = getConvosInstance();
-      if (!inst) return;
+      if (!inst) {
+        return;
+      }
       try {
         await inst.sendMessage(`Device paired successfully (inbox: ${id.slice(0, 12)}...)`);
       } catch {
@@ -149,10 +152,14 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
     listPeers: async () => [],
     listGroups: async ({ query }) => {
       const inst = getConvosInstance();
-      if (!inst) return [];
+      if (!inst) {
+        return [];
+      }
       const name = inst.label ?? inst.conversationId.slice(0, 8);
       const q = query?.trim().toLowerCase() ?? "";
-      if (q && !name.toLowerCase().includes(q)) return [];
+      if (q && !name.toLowerCase().includes(q)) {
+        return [];
+      }
       return [{ kind: "group" as const, id: inst.conversationId, name }];
     },
   },
@@ -198,7 +205,9 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
         };
       }
       const inst = getConvosInstance();
-      if (inst?.isRunning()) return { ok: true };
+      if (inst?.isRunning()) {
+        return { ok: true };
+      }
       return {
         ok: false,
         error: "Convos instance not running. Restart the gateway.",
@@ -262,7 +271,7 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
       // Block until abort signal fires
       await new Promise<void>((resolve) => {
         const onAbort = () => {
-          stopInstance(account.accountId, log).finally(resolve);
+          void stopInstance(account.accountId, log).finally(resolve);
         };
         if (abortSignal?.aborted) {
           onAbort();
@@ -302,7 +311,7 @@ async function handleInboundMessage(
     return;
   }
 
-  const cfg = runtime.config.loadConfig() as OpenClawConfig;
+  const cfg = runtime.config.loadConfig();
   const rawBody = msg.content;
 
   const route = runtime.channel.routing.resolveAgentRoute({
@@ -401,12 +410,14 @@ async function deliverConvosReply(params: {
   const { payload, accountId, runtime, log, tableMode = "code" } = params;
 
   const inst = getConvosInstance();
-  if (!inst) throw new Error("Convos instance not available");
+  if (!inst) {
+    throw new Error("Convos instance not available");
+  }
 
   const text = runtime.channel.text.convertMarkdownTables(payload.text ?? "", tableMode);
 
   if (text) {
-    const cfg = runtime.config.loadConfig() as OpenClawConfig;
+    const cfg = runtime.config.loadConfig();
     const chunkLimit = runtime.channel.text.resolveTextChunkLimit({
       cfg,
       channel: "convos",
