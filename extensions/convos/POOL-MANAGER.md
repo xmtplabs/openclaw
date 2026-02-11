@@ -133,3 +133,63 @@ All endpoints accept JSON bodies. All return JSON responses.
 | name      | string | "OpenClaw"  | Profile display name  |
 | env       | string | from config | "dev" or "production" |
 | accountId | string | "default"   | Account ID            |
+
+## Recommendation: Golden Checkpoint Instead of Pool Manager
+
+Because XMTP identity creation happens lazily on `/convos/conversation`, you can eliminate the pool manager entirely using a golden checkpoint approach:
+
+### The insight
+
+A fully configured OpenClaw instance — with API key, plugin enabled, env set, gateway ready — is identical before the `/convos/conversation` call. No XMTP state exists yet. This means you can snapshot this state once and stamp out copies on demand.
+
+### Golden checkpoint flow
+
+1. **Build the golden image once:**
+
+   ```bash
+   # Configure everything except the conversation
+   openclaw config set auth.profiles.anthropic:default.provider anthropic
+   openclaw config set auth.profiles.anthropic:default.mode token
+   openclaw config set channels.convos.enabled true
+   openclaw config set channels.convos.env dev
+   ```
+
+   Snapshot this as your golden checkpoint (container image, VM snapshot, Sprite checkpoint, etc). No XMTP keys, no conversations, no per-instance state.
+
+2. **On demand, launch from checkpoint:**
+   - Restore the golden checkpoint into a fresh instance
+   - Start the gateway
+   - `POST /convos/conversation` — creates XMTP identity + conversation in one call
+   - Instance is immediately live
+
+3. **Each instance is fully independent:**
+   - Own XMTP identity (created at launch, not baked into the image)
+   - Own conversation
+   - Own `~/.convos/identities/` directory
+   - No shared state between instances
+
+### Why this eliminates the pool manager
+
+| Pool manager approach                          | Golden checkpoint approach                                |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| Pre-provisions N instances, keeps them warm    | Launches instances on demand from snapshot                |
+| Manages a registry of available instances      | No registry — each instance is stateless until first call |
+| Assigns pre-created conversations to users     | Creates conversation at the moment the user needs it      |
+| Wastes resources on idle instances             | Zero idle cost — instances only exist when needed         |
+| Complex: health checks, recycling, rebalancing | Simple: launch, call one endpoint, done                   |
+
+### Cold start time
+
+The only tradeoff is cold start time. Launching from a golden checkpoint adds:
+
+- Checkpoint restore time (platform-dependent)
+- Gateway startup (~1-3s)
+- `/convos/conversation` call (~2-5s for XMTP identity creation + conversation)
+
+Total: roughly 5-10 seconds from launch to a live conversation. If this is acceptable, no pool manager is needed.
+
+### When you still need a pool manager
+
+- Cold start time is unacceptable (sub-second provisioning required)
+- You need to pre-assign conversations before users arrive
+- You're running on infrastructure that doesn't support fast checkpoints
