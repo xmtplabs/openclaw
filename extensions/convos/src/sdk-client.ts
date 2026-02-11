@@ -7,9 +7,11 @@
  */
 
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { CreateConversationResult, InviteResult } from "./types.js";
 
@@ -41,17 +43,37 @@ function resolveConvosBin(): string {
   if (cachedBinPath) {
     return cachedBinPath;
   }
+
+  // Strategy 1: createRequire from this file's URL
   try {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@convos/cli/package.json");
     const binPath = path.join(path.dirname(pkgPath), "bin", "run.js");
-    cachedBinPath = binPath;
-    return binPath;
+    if (existsSync(binPath)) {
+      cachedBinPath = binPath;
+      return binPath;
+    }
   } catch {
-    // Fallback: assume `convos` is on PATH
-    cachedBinPath = "convos";
-    return "convos";
+    // import.meta.url may not resolve when loaded via jiti
   }
+
+  // Strategy 2: walk up from this file to find extension's node_modules
+  // This file lives at extensions/convos/src/sdk-client.ts (or .js)
+  try {
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const extRoot = path.resolve(thisDir, "..");
+    const binPath = path.join(extRoot, "node_modules", "@convos", "cli", "bin", "run.js");
+    if (existsSync(binPath)) {
+      cachedBinPath = binPath;
+      return binPath;
+    }
+  } catch {
+    // fileURLToPath may fail for non-file: URLs
+  }
+
+  // Fallback: assume `convos` is on PATH
+  cachedBinPath = "convos";
+  return "convos";
 }
 
 // ---- ConvosInstance ----
