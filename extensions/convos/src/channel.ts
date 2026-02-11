@@ -437,6 +437,36 @@ async function deliverConvosReply(params: {
   }
 }
 
+/**
+ * Create a fully-wired ConvosInstance and start it.
+ * Used by HTTP routes to start message handling immediately after creating/joining.
+ */
+export async function startWiredInstance(params: {
+  conversationId: string;
+  identityId: string;
+  env: "production" | "dev";
+  debug?: boolean;
+}): Promise<void> {
+  const runtime = getConvosRuntime();
+  const cfg = runtime.config.loadConfig();
+  const account = resolveConvosAccount({ cfg: cfg as CoreConfig });
+
+  const inst = ConvosInstance.fromExisting(params.conversationId, params.identityId, params.env, {
+    debug: params.debug ?? account.debug,
+    onMessage: (msg: InboundMessage) => {
+      handleInboundMessage(account, msg, runtime).catch((err) => {
+        console.error(`[convos] Message handling failed: ${String(err)}`);
+      });
+    },
+    onJoinAccepted: (info) => {
+      console.log(`[convos] Join accepted: ${info.joinerInboxId}`);
+    },
+  });
+
+  setConvosInstance(inst);
+  await inst.start();
+}
+
 async function stopInstance(accountId: string, log?: RuntimeLogger) {
   const inst = getConvosInstance();
   if (inst) {

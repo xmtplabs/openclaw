@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
-import { convosPlugin } from "./src/channel.js";
+import { convosPlugin, startWiredInstance } from "./src/channel.js";
 import { getConvosInstance, setConvosInstance } from "./src/outbound.js";
 import { getConvosRuntime, setConvosRuntime, setConvosSetupActive } from "./src/runtime.js";
 import { ConvosInstance } from "./src/sdk-client.js";
@@ -380,9 +380,12 @@ const plugin = {
             },
           });
 
-          // Set and start the instance
-          setConvosInstance(instance);
-          await instance.start();
+          // Start with full message handling pipeline
+          await startWiredInstance({
+            conversationId: result.conversationId,
+            identityId: instance.identityId,
+            env,
+          });
 
           jsonResponse(res, 200, {
             conversationId: result.conversationId,
@@ -457,9 +460,12 @@ const plugin = {
             },
           });
 
-          // Set and start the instance
-          setConvosInstance(instance);
-          await instance.start();
+          // Start with full message handling pipeline
+          await startWiredInstance({
+            conversationId,
+            identityId: instance.identityId,
+            env,
+          });
 
           jsonResponse(res, 200, { status: "joined", conversationId });
         } catch (err) {
