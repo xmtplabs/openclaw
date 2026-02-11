@@ -587,6 +587,27 @@ const plugin = {
       },
     });
 
+    // Health/status: reports whether the instance is bound and streaming.
+    api.registerHttpRoute({
+      path: "/convos/status",
+      handler: async (req, res) => {
+        if (req.method !== "GET") {
+          jsonResponse(res, 405, { error: "Method Not Allowed" });
+          return;
+        }
+        const inst = getConvosInstance();
+        if (!inst) {
+          jsonResponse(res, 200, { ready: true, conversation: null, streaming: false });
+          return;
+        }
+        jsonResponse(res, 200, {
+          ready: true,
+          conversation: { id: inst.conversationId },
+          streaming: inst.isStreaming(),
+        });
+      },
+    });
+
     // Reset: re-run setup with a fresh identity.
     api.registerHttpRoute({
       path: "/convos/reset",

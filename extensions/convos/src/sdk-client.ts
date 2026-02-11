@@ -86,6 +86,7 @@ export class ConvosInstance {
 
   private env: "production" | "dev";
   private children: ChildProcess[] = [];
+  private streamChild: ChildProcess | null = null;
   private running = false;
   private onMessage?: (msg: InboundMessage) => void;
   private onJoinAccepted?: (info: { joinerInboxId: string }) => void;
@@ -274,6 +275,7 @@ export class ConvosInstance {
 
     // Stream messages from this conversation
     const streamChild = this.spawnChild(["conversation", "stream", this.conversationId]);
+    this.streamChild = streamChild;
     this.pumpJsonLines(streamChild, "stream", (data) => {
       // Skip empty/non-text content
       const content = typeof data.content === "string" ? data.content : "";
@@ -329,6 +331,7 @@ export class ConvosInstance {
       return;
     }
     this.running = false;
+    this.streamChild = null;
     for (const child of this.children) {
       try {
         child.kill("SIGTERM");
@@ -344,6 +347,15 @@ export class ConvosInstance {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /** True when the XMTP message stream child process is alive. */
+  isStreaming(): boolean {
+    return this.running && this.streamChild !== null && this.streamChild.exitCode === null;
+  }
+
+  get envName(): "production" | "dev" {
+    return this.env;
   }
 
   // ==== Operations (all shell out to CLI) ====

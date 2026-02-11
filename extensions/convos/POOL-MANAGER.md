@@ -102,10 +102,31 @@ XMTP identity and private keys are created lazily on the first `/convos/conversa
 - **No setup flow needed.** The `/convos/setup` endpoints exist for the Control UI onboarding experience (show QR, wait for join, confirm). The pool manager should skip these entirely.
 - **No restart needed.** After `/convos/conversation` or `/convos/join`, the instance is immediately live with full message handling. No gateway restart required.
 
+## Customizing agent behavior
+
+Write operator-level directives to `~/.openclaw/workspace/INSTRUCTIONS.md` to customize the agent's system prompt. This is an OpenClaw core feature (not Convos-specific) — any text in that file is injected into every agent invocation as operator-provided instructions.
+
+- Write the file before or after starting the gateway; it is loaded fresh on each agent invocation, so changes take effect immediately without a restart.
+- Use it for personality, tone, tool restrictions, domain knowledge, or any behavioral guardrails.
+- Each instance can have its own `INSTRUCTIONS.md`, or you can bake a shared one into your golden image.
+
+Example `~/.openclaw/workspace/INSTRUCTIONS.md`:
+
+```markdown
+You are a customer support agent for Acme Corp.
+
+- Always greet the user by name if known.
+- Never discuss competitor products.
+- Escalate billing disputes to a human operator.
+```
+
+For the golden checkpoint approach, write `INSTRUCTIONS.md` during step 1 (building the golden image) so every instance launched from the checkpoint inherits the same directives.
+
 ## HTTP API Reference
 
 | Method | Path                        | Description                                       |
 | ------ | --------------------------- | ------------------------------------------------- |
+| GET    | `/convos/status`            | Health check — ready, conversation, streaming     |
 | POST   | `/convos/conversation`      | Create a new conversation (returns invite URL)    |
 | POST   | `/convos/join`              | Join an existing conversation via invite URL      |
 | POST   | `/convos/conversation/send` | Send a message                                    |
@@ -134,6 +155,21 @@ All endpoints accept JSON bodies. All return JSON responses.
 | env       | string | from config | "dev" or "production" |
 | accountId | string | "default"   | Account ID            |
 
+### GET /convos/status
+
+Returns the instance health. The `streaming` field confirms the XMTP child process is alive (not just that the instance variable is set).
+
+```jsonc
+// Gateway up, no conversation bound
+{ "ready": true, "conversation": null, "streaming": false }
+
+// Conversation bound, XMTP stream alive
+{ "ready": true, "conversation": { "id": "abc..." }, "streaming": true }
+
+// Conversation bound, XMTP stream dead
+{ "ready": true, "conversation": { "id": "abc..." }, "streaming": false }
+```
+
 ## Recommendation: Golden Checkpoint Instead of Pool Manager
 
 Because XMTP identity creation happens lazily on `/convos/conversation`, you can eliminate the pool manager entirely using a golden checkpoint approach:
@@ -152,6 +188,12 @@ A fully configured OpenClaw instance — with API key, plugin enabled, env set, 
    openclaw config set auth.profiles.anthropic:default.mode token
    openclaw config set channels.convos.enabled true
    openclaw config set channels.convos.env dev
+
+   # (Optional) Write operator-level directives
+   mkdir -p ~/.openclaw/workspace
+   cat > ~/.openclaw/workspace/INSTRUCTIONS.md << 'EOF'
+   You are a helpful assistant for Acme Corp.
+   EOF
    ```
 
    Snapshot this as your golden checkpoint (container image, VM snapshot, Sprite checkpoint, etc). No XMTP keys, no conversations, no per-instance state.
