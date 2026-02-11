@@ -354,8 +354,9 @@ const plugin = {
           const runtime = getConvosRuntime();
           const cfg = runtime.config.loadConfig();
           const account = resolveConvosAccount({ cfg: cfg as CoreConfig, accountId });
+          const env = body.env === "dev" || body.env === "production" ? body.env : account.env;
 
-          const { instance, result } = await ConvosInstance.create(account.env, {
+          const { instance, result } = await ConvosInstance.create(env, {
             name,
             profileName: name,
           });
@@ -373,7 +374,7 @@ const plugin = {
                 ...existingConvos,
                 identityId: instance.identityId,
                 ownerConversationId: result.conversationId,
-                env: account.env,
+                env,
                 enabled: true,
               },
             },
@@ -425,15 +426,12 @@ const plugin = {
           const runtime = getConvosRuntime();
           const cfg = runtime.config.loadConfig();
           const account = resolveConvosAccount({ cfg: cfg as CoreConfig, accountId });
+          const env = body.env === "dev" || body.env === "production" ? body.env : account.env;
 
-          const { instance, status, conversationId } = await ConvosInstance.join(
-            account.env,
-            inviteUrl,
-            {
-              profileName: name,
-              timeout: 60,
-            },
-          );
+          const { instance, status, conversationId } = await ConvosInstance.join(env, inviteUrl, {
+            profileName: name,
+            timeout: 60,
+          });
 
           if (status !== "joined" || !conversationId || !instance) {
             jsonResponse(res, 200, { status: "waiting_for_acceptance" });
@@ -453,7 +451,7 @@ const plugin = {
                 ...existingConvos,
                 identityId: instance.identityId,
                 ownerConversationId: conversationId,
-                env: account.env,
+                env,
                 enabled: true,
               },
             },
