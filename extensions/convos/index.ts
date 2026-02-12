@@ -450,14 +450,6 @@ const plugin = {
             env,
           });
 
-          // --profile-name on create only stores locally, so explicitly
-          // update the group profile now that we're a member.
-          try {
-            await instance.updateProfile({ name: profileName, image: profileImage });
-          } catch {
-            // Non-fatal: may fail if permissions don't allow it
-          }
-
           jsonResponse(res, 200, {
             conversationId: result.conversationId,
             inviteUrl: result.inviteUrl,
@@ -546,15 +538,6 @@ const plugin = {
               },
             },
           });
-
-          // Update profile after join — --profile-name on join only stores locally,
-          // so we explicitly update the group profile now that we're a member.
-          // (onJoinAccepted fires on the creator side, not the joiner side.)
-          try {
-            await instance.updateProfile({ name: profileName, image: profileImage });
-          } catch {
-            // Non-fatal: rename may fail if permissions don't allow it
-          }
 
           // Start with full message handling pipeline
           await startWiredInstance({
