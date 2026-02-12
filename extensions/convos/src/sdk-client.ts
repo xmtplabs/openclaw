@@ -163,6 +163,9 @@ export class ConvosInstance {
       },
     );
     this.children.push(child);
+    child.on("error", (err) => {
+      console.error(`[convos] spawn error: ${String(err)}`);
+    });
     return child;
   }
 
@@ -482,8 +485,23 @@ export class ConvosInstance {
     });
 
     child.on("exit", (code) => {
-      if (this.running && this.debug) {
-        console.log(`[convos:${label}] exited with code ${code}`);
+      // Remove from children list
+      const idx = this.children.indexOf(child);
+      if (idx !== -1) {
+        this.children.splice(idx, 1);
+      }
+      if (child === this.streamChild) {
+        this.streamChild = null;
+      }
+
+      if (this.running) {
+        // Unexpected exit — log always (not just in debug mode)
+        console.error(`[convos:${label}] exited unexpectedly with code ${code}`);
+        // If all children are gone, mark instance as no longer running
+        if (this.children.length === 0) {
+          this.running = false;
+          console.error("[convos] All child processes exited — instance stopped");
+        }
       }
     });
 

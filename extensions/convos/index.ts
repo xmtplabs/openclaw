@@ -178,9 +178,16 @@ async function handleComplete() {
 
 // --- HTTP helpers ---
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
+  let totalSize = 0;
   for await (const chunk of req) {
+    totalSize += (chunk as Buffer).length;
+    if (totalSize > MAX_BODY_BYTES) {
+      throw new Error("Request body too large");
+    }
     chunks.push(chunk as Buffer);
   }
   const raw = Buffer.concat(chunks).toString();
