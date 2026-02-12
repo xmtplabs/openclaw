@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { emptyPluginConfigSchema, renderQrPngBase64 } from "openclaw/plugin-sdk";
 import { resolveConvosAccount, type CoreConfig } from "./src/accounts.js";
 import { convosPlugin, startWiredInstance } from "./src/channel.js";
@@ -203,6 +206,17 @@ function jsonResponse(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+function checkPoolAuth(req: IncomingMessage): boolean {
+  const runtime = getConvosRuntime();
+  const cfg = runtime.config.loadConfig() as Record<string, unknown>;
+  const channels = cfg.channels as Record<string, unknown> | undefined;
+  const convos = channels?.convos as Record<string, unknown> | undefined;
+  const poolApiKey = convos?.poolApiKey as string | undefined;
+  if (!poolApiKey) return true; // No poolApiKey configured — allow all
+  const authHeader = req.headers.authorization;
+  return authHeader === `Bearer ${poolApiKey}`;
+}
+
 // --- Plugin ---
 
 const plugin = {
@@ -281,6 +295,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         try {
           const body = await readJsonBody(req);
           const result = await handleSetup({
@@ -304,6 +322,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         jsonResponse(res, 200, handleStatus());
       },
     });
@@ -313,6 +335,10 @@ const plugin = {
       handler: async (req, res) => {
         if (req.method !== "POST") {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
+          return;
+        }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
           return;
         }
         try {
@@ -331,6 +357,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         const result = await handleCancel();
         jsonResponse(res, 200, result);
       },
@@ -342,6 +372,10 @@ const plugin = {
       handler: async (req, res) => {
         if (req.method !== "POST") {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
+          return;
+        }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
           return;
         }
         try {
@@ -366,6 +400,15 @@ const plugin = {
               ? body.permissions
               : undefined;
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
+
+          // Write instructions file for the agent if provided
+          const instructions =
+            typeof body.instructions === "string" ? body.instructions : undefined;
+          if (instructions && instructions.trim()) {
+            const wsDir = path.join(os.homedir(), ".openclaw", "workspace");
+            fs.mkdirSync(wsDir, { recursive: true });
+            fs.writeFileSync(path.join(wsDir, "INSTRUCTIONS.md"), instructions);
+          }
 
           const runtime = getConvosRuntime();
           const cfg = runtime.config.loadConfig();
@@ -435,6 +478,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         try {
           // Guard: reject if instance already bound
           if (getConvosInstance()) {
@@ -456,6 +503,15 @@ const plugin = {
           const profileImage =
             typeof body.profileImage === "string" ? body.profileImage : undefined;
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
+
+          // Write instructions file for the agent if provided
+          const instructions =
+            typeof body.instructions === "string" ? body.instructions : undefined;
+          if (instructions && instructions.trim()) {
+            const wsDir = path.join(os.homedir(), ".openclaw", "workspace");
+            fs.mkdirSync(wsDir, { recursive: true });
+            fs.writeFileSync(path.join(wsDir, "INSTRUCTIONS.md"), instructions);
+          }
 
           const runtime = getConvosRuntime();
           const cfg = runtime.config.loadConfig();
@@ -522,6 +578,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         try {
           const inst = getConvosInstance();
           if (!inst) {
@@ -550,6 +610,10 @@ const plugin = {
       handler: async (req, res) => {
         if (req.method !== "POST") {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
+          return;
+        }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
           return;
         }
         try {
@@ -582,6 +646,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         try {
           const inst = getConvosInstance();
           if (!inst) {
@@ -611,6 +679,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         try {
           const inst = getConvosInstance();
           if (!inst) {
@@ -635,6 +707,10 @@ const plugin = {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
           return;
         }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
+          return;
+        }
         const inst = getConvosInstance();
         if (!inst) {
           jsonResponse(res, 200, { ready: true, conversation: null, streaming: false });
@@ -654,6 +730,10 @@ const plugin = {
       handler: async (req, res) => {
         if (req.method !== "POST") {
           jsonResponse(res, 405, { error: "Method Not Allowed" });
+          return;
+        }
+        if (!checkPoolAuth(req)) {
+          jsonResponse(res, 401, { error: "Unauthorized" });
           return;
         }
         try {
