@@ -125,9 +125,25 @@ export class ConvosInstance {
     return stdout;
   }
 
-  /** Run a convos command with --json and parse the output. */
+  /** Run a convos command with --json and parse the JSON output.
+   *  The CLI prints human-readable log lines before the pretty-printed
+   *  JSON object, so we find the last top-level JSON block in stdout. */
   private async execJson<T>(args: string[]): Promise<T> {
     const stdout = await this.exec([...args, "--json"]);
+    // Find the last { and its matching } to extract the JSON object
+    const lastBrace = stdout.lastIndexOf("}");
+    if (lastBrace !== -1) {
+      // Walk backwards from lastBrace to find the matching opening {
+      let depth = 0;
+      for (let i = lastBrace; i >= 0; i--) {
+        if (stdout[i] === "}") depth++;
+        else if (stdout[i] === "{") depth--;
+        if (depth === 0) {
+          return JSON.parse(stdout.slice(i, lastBrace + 1)) as T;
+        }
+      }
+    }
+    // Fallback: try parsing the whole thing (will throw a clear error)
     return JSON.parse(stdout.trim()) as T;
   }
 
@@ -166,7 +182,13 @@ export class ConvosInstance {
   /** Create a new conversation via `convos conversations create`. */
   static async create(
     env: "production" | "dev",
-    params?: { name?: string; profileName?: string },
+    params?: {
+      name?: string;
+      profileName?: string;
+      description?: string;
+      imageUrl?: string;
+      permissions?: "all-members" | "admin-only";
+    },
     options?: ConvosInstanceOptions,
   ): Promise<{ instance: ConvosInstance; result: CreateConversationResult }> {
     const args = ["conversations", "create"];
@@ -175,6 +197,15 @@ export class ConvosInstance {
     }
     if (params?.profileName) {
       args.push("--profile-name", params.profileName);
+    }
+    if (params?.description) {
+      args.push("--description", params.description);
+    }
+    if (params?.imageUrl) {
+      args.push("--image-url", params.imageUrl);
+    }
+    if (params?.permissions) {
+      args.push("--permissions", params.permissions);
     }
 
     // Use a temporary instance to access exec helpers
@@ -397,8 +428,20 @@ export class ConvosInstance {
     return { inviteSlug: data.slug };
   }
 
+  async updateProfile(profile: { name?: string; image?: string }): Promise<void> {
+    const args = ["conversation", "update-profile", this.conversationId];
+    if (profile.name !== undefined) {
+      args.push("--name", profile.name);
+    }
+    if (profile.image !== undefined) {
+      args.push("--image", profile.image);
+    }
+    await this.execJson(args);
+  }
+
+  /** Shorthand for updateProfile({ name }). */
   async rename(name: string): Promise<void> {
-    await this.execJson(["conversation", "update-profile", this.conversationId, "--name", name]);
+    await this.updateProfile({ name });
   }
 
   async lock(): Promise<void> {

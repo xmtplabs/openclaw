@@ -446,6 +446,8 @@ export async function startWiredInstance(params: {
   identityId: string;
   env: "production" | "dev";
   debug?: boolean;
+  /** If set, rename the conversation profile when a joiner is accepted. */
+  name?: string;
 }): Promise<void> {
   const runtime = getConvosRuntime();
   const cfg = runtime.config.loadConfig();
@@ -460,6 +462,11 @@ export async function startWiredInstance(params: {
     },
     onJoinAccepted: (info) => {
       console.log(`[convos] Join accepted: ${info.joinerInboxId}`);
+      if (params.name) {
+        inst.rename(params.name).catch((err) => {
+          console.error(`[convos] Rename after join failed: ${String(err)}`);
+        });
+      }
     },
   });
 

@@ -348,7 +348,16 @@ const plugin = {
           }
 
           const body = await readJsonBody(req);
-          const name = typeof body.name === "string" ? body.name : "OpenClaw";
+          const name = typeof body.name === "string" ? body.name : "Convos Agent";
+          const profileName = typeof body.profileName === "string" ? body.profileName : name;
+          const profileImage =
+            typeof body.profileImage === "string" ? body.profileImage : undefined;
+          const description = typeof body.description === "string" ? body.description : undefined;
+          const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : undefined;
+          const permissions =
+            body.permissions === "all-members" || body.permissions === "admin-only"
+              ? body.permissions
+              : undefined;
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
 
           const runtime = getConvosRuntime();
@@ -358,8 +367,20 @@ const plugin = {
 
           const { instance, result } = await ConvosInstance.create(env, {
             name,
-            profileName: name,
+            profileName,
+            description,
+            imageUrl,
+            permissions,
           });
+
+          // Set profile image post-create (not supported as a create flag)
+          if (profileImage) {
+            try {
+              await instance.updateProfile({ image: profileImage });
+            } catch {
+              // Non-fatal
+            }
+          }
 
           // Save to config so startAccount can restore on restart
           const existingChannels = (cfg as Record<string, unknown>).channels as
@@ -423,7 +444,10 @@ const plugin = {
             jsonResponse(res, 400, { error: "inviteUrl (string) is required" });
             return;
           }
-          const name = typeof body.name === "string" ? body.name : "OpenClaw";
+          const profileName =
+            typeof body.profileName === "string" ? body.profileName : "Convos Agent";
+          const profileImage =
+            typeof body.profileImage === "string" ? body.profileImage : undefined;
           const accountId = typeof body.accountId === "string" ? body.accountId : undefined;
 
           const runtime = getConvosRuntime();
@@ -432,7 +456,7 @@ const plugin = {
           const env = body.env === "dev" || body.env === "production" ? body.env : account.env;
 
           const { instance, status, conversationId } = await ConvosInstance.join(env, inviteUrl, {
-            profileName: name,
+            profileName,
             timeout: 60,
           });
 
@@ -459,6 +483,15 @@ const plugin = {
               },
             },
           });
+
+          // Update profile after join — --profile-name on join only stores locally,
+          // so we explicitly update the group profile now that we're a member.
+          // (onJoinAccepted fires on the creator side, not the joiner side.)
+          try {
+            await instance.updateProfile({ name: profileName, image: profileImage });
+          } catch {
+            // Non-fatal: rename may fail if permissions don't allow it
+          }
 
           // Start with full message handling pipeline
           await startWiredInstance({
