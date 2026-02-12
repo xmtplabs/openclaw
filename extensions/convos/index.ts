@@ -423,14 +423,6 @@ const plugin = {
             permissions,
           });
 
-          // --profile-name on create only stores locally, so explicitly
-          // update the group profile now that we're a member.
-          try {
-            await instance.updateProfile({ name: profileName, image: profileImage });
-          } catch {
-            // Non-fatal: may fail if permissions don't allow it
-          }
-
           // Save to config so startAccount can restore on restart
           const existingChannels = (cfg as Record<string, unknown>).channels as
             | Record<string, unknown>
@@ -450,12 +442,21 @@ const plugin = {
             },
           });
 
-          // Start with full message handling pipeline
+          // Start with full message handling pipeline (must happen before
+          // updateProfile so the join-approval stream handler is active)
           await startWiredInstance({
             conversationId: result.conversationId,
             identityId: instance.identityId,
             env,
           });
+
+          // --profile-name on create only stores locally, so explicitly
+          // update the group profile now that we're a member.
+          try {
+            await instance.updateProfile({ name: profileName, image: profileImage });
+          } catch {
+            // Non-fatal: may fail if permissions don't allow it
+          }
 
           jsonResponse(res, 200, {
             conversationId: result.conversationId,
