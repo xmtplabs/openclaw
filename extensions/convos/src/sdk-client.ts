@@ -76,6 +76,13 @@ function resolveConvosBin(): string {
   return "convos";
 }
 
+// ---- Constants ----
+
+/** Max number of automatic restarts per child process label (stream, join-requests). */
+const MAX_CHILD_RESTARTS = 3;
+/** Base delay between restarts (multiplied by attempt number). */
+const RESTART_BASE_DELAY_MS = 2000;
+
 // ---- ConvosInstance ----
 
 export class ConvosInstance {
@@ -88,6 +95,7 @@ export class ConvosInstance {
   private children: ChildProcess[] = [];
   private streamChild: ChildProcess | null = null;
   private running = false;
+  private restartCounts = new Map<string, number>();
   private onMessage?: (msg: InboundMessage) => void;
   private onJoinAccepted?: (info: { joinerInboxId: string }) => void;
   private debug: boolean;
@@ -306,8 +314,18 @@ export class ConvosInstance {
       return;
     }
     this.running = true;
+    this.restartCounts.clear();
 
-    // Stream messages from this conversation
+    this.startStreamChild();
+    this.startJoinRequestsChild();
+
+    if (this.debug) {
+      console.log(`[convos] Started: ${this.conversationId.slice(0, 12)}...`);
+    }
+  }
+
+  /** Spawn (or re-spawn) the message stream child process. */
+  private startStreamChild(): void {
     const streamChild = this.spawnChild(["conversation", "stream", this.conversationId]);
     this.streamChild = streamChild;
     this.pumpJsonLines(streamChild, "stream", (data) => {
@@ -335,9 +353,10 @@ export class ConvosInstance {
         }
       });
     });
+  }
 
-    // Process join requests (creator instances only — joiner instances
-    // won't receive join DMs, so this child will be idle for joiners)
+  /** Spawn (or re-spawn) the join-requests watcher child process. */
+  private startJoinRequestsChild(): void {
     const joinChild = this.spawnChild([
       "conversations",
       "process-join-requests",
@@ -354,10 +373,6 @@ export class ConvosInstance {
         this.onJoinAccepted?.({ joinerInboxId });
       }
     });
-
-    if (this.debug) {
-      console.log(`[convos] Started: ${this.conversationId.slice(0, 12)}...`);
-    }
   }
 
   async stop(): Promise<void> {
@@ -497,10 +512,34 @@ export class ConvosInstance {
       if (this.running) {
         // Unexpected exit — log always (not just in debug mode)
         console.error(`[convos:${label}] exited unexpectedly with code ${code}`);
-        // If all children are gone, mark instance as no longer running
-        if (this.children.length === 0) {
-          this.running = false;
-          console.error("[convos] All child processes exited — instance stopped");
+
+        // Auto-restart stream/join-requests children after a delay
+        const attempt = (this.restartCounts.get(label) ?? 0) + 1;
+        if (attempt <= MAX_CHILD_RESTARTS) {
+          this.restartCounts.set(label, attempt);
+          const delayMs = RESTART_BASE_DELAY_MS * attempt;
+          console.error(
+            `[convos:${label}] restarting in ${delayMs}ms (attempt ${attempt}/${MAX_CHILD_RESTARTS})`,
+          );
+          setTimeout(() => {
+            if (!this.running) {
+              return;
+            }
+            if (label === "stream") {
+              this.startStreamChild();
+            } else if (label === "join-requests") {
+              this.startJoinRequestsChild();
+            }
+          }, delayMs);
+        } else {
+          console.error(
+            `[convos:${label}] max restarts reached (${MAX_CHILD_RESTARTS}), giving up`,
+          );
+          // If all children are gone, mark instance as no longer running
+          if (this.children.length === 0) {
+            this.running = false;
+            console.error("[convos] All child processes exited — instance stopped");
+          }
         }
       }
     });
@@ -508,9 +547,8 @@ export class ConvosInstance {
     if (child.stderr) {
       const errRl = createInterface({ input: child.stderr });
       errRl.on("line", (line) => {
-        if (this.debug) {
-          console.error(`[convos:${label}:stderr] ${line}`);
-        }
+        // Always log stderr for diagnostics (crash messages, XMTP errors)
+        console.error(`[convos:${label}:stderr] ${line}`);
       });
     }
   }
