@@ -423,13 +423,12 @@ const plugin = {
             permissions,
           });
 
-          // Set profile image post-create (not supported as a create flag)
-          if (profileImage) {
-            try {
-              await instance.updateProfile({ image: profileImage });
-            } catch {
-              // Non-fatal
-            }
+          // --profile-name on create only stores locally, so explicitly
+          // update the group profile now that we're a member.
+          try {
+            await instance.updateProfile({ name: profileName, image: profileImage });
+          } catch {
+            // Non-fatal: may fail if permissions don't allow it
           }
 
           // Save to config so startAccount can restore on restart
