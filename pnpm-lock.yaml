@@ -255,7 +255,7 @@ importers:
     dependencies:
       '@convos/cli':
         specifier: github:xmtplabs/convos-cli
-        version: https://codeload.github.com/xmtplabs/convos-cli/tar.gz/eff91de77c19bbcdaa064fcd765691bffa177f66(@types/node@25.2.0)(typescript@5.9.3)(zod@4.3.6)
+        version: https://codeload.github.com/xmtplabs/convos-cli/tar.gz/cae4ddb386b6f7f6c863d8d1ed1eb6689a73b4a2(@types/node@25.2.0)(typescript@5.9.3)(zod@4.3.6)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -943,8 +943,8 @@ packages:
   '@cloudflare/workers-types@4.20260120.0':
     resolution: {integrity: sha512-B8pueG+a5S+mdK3z8oKu1ShcxloZ7qWb68IEyLLaepvdryIbNC7JVPcY0bWsjS56UQVKc5fnyRge3yZIwc9bxw==}
 
-  '@convos/cli@https://codeload.github.com/xmtplabs/convos-cli/tar.gz/eff91de77c19bbcdaa064fcd765691bffa177f66':
-    resolution: {tarball: https://codeload.github.com/xmtplabs/convos-cli/tar.gz/eff91de77c19bbcdaa064fcd765691bffa177f66}
+  '@convos/cli@https://codeload.github.com/xmtplabs/convos-cli/tar.gz/cae4ddb386b6f7f6c863d8d1ed1eb6689a73b4a2':
+    resolution: {tarball: https://codeload.github.com/xmtplabs/convos-cli/tar.gz/cae4ddb386b6f7f6c863d8d1ed1eb6689a73b4a2}
     version: 0.1.0
     engines: {node: '>=22'}
     hasBin: true
@@ -7007,7 +7007,7 @@ snapshots:
   '@cloudflare/workers-types@4.20260120.0':
     optional: true
 
-  '@convos/cli@https://codeload.github.com/xmtplabs/convos-cli/tar.gz/eff91de77c19bbcdaa064fcd765691bffa177f66(@types/node@25.2.0)(typescript@5.9.3)(zod@4.3.6)':
+  '@convos/cli@https://codeload.github.com/xmtplabs/convos-cli/tar.gz/cae4ddb386b6f7f6c863d8d1ed1eb6689a73b4a2(@types/node@25.2.0)(typescript@5.9.3)(zod@4.3.6)':
     dependencies:
       '@noble/curves': 2.0.1
       '@oclif/core': 4.8.0
