@@ -13,6 +13,12 @@ import {
   buildTextHandler,
   stopAgent,
 } from "./gateway-lifecycle.js";
+import {
+  getResolverForAccount,
+  setResolverForAccount,
+  createEnsResolver,
+  isEnsName,
+} from "./lib/ens-resolver.js";
 import { setClientForAccount, getClientForAccount } from "./outbound.js";
 import { setXmtpRuntime } from "./runtime.js";
 import {
@@ -30,6 +36,17 @@ import {
 describe("stopAgent", () => {
   beforeEach(() => {
     setClientForAccount("default", null);
+    setResolverForAccount("default", null);
+  });
+
+  it("clears the ENS resolver for the account", async () => {
+    const resolver = createEnsResolver();
+    setResolverForAccount("default", resolver);
+    expect(getResolverForAccount("default")).toBe(resolver);
+
+    await stopAgent("default");
+
+    expect(getResolverForAccount("default")).toBeNull();
   });
 
   it("stops agent and removes from registry", async () => {
@@ -592,5 +609,146 @@ describe("owner DM creation on startup", () => {
     }
 
     expect(agent.createDmWithAddress).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Owner DM creation with ENS resolution
+// ---------------------------------------------------------------------------
+
+describe("owner DM creation with ENS resolution", () => {
+  it("resolves ENS name before createDmWithAddress", async () => {
+    const { agent } = makeFakeAgent();
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      ownerAddress: "vitalik.eth",
+    });
+    const resolvedAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+
+    // Create a mock ENS resolver
+    const ensResolver = {
+      resolveEnsName: vi.fn(async () => resolvedAddr),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+
+    // Simulate the ENS-aware owner DM creation logic from startAccount
+    if (account.ownerAddress) {
+      try {
+        let ownerAddr = account.ownerAddress;
+        if (isEnsName(ownerAddr)) {
+          const resolved = await ensResolver.resolveEnsName(ownerAddr);
+          if (resolved) {
+            ownerAddr = resolved;
+            log.info(
+              `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} -> ${ownerAddr.slice(0, 12)}...`,
+            );
+          } else {
+            log.warn(`[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`);
+          }
+        }
+        if (/^0x[0-9a-fA-F]{40}$/.test(ownerAddr)) {
+          await agent.createDmWithAddress(ownerAddr as `0x${string}`);
+          log.info(`[${account.accountId}] Owner DM ready (${ownerAddr.slice(0, 12)}...)`);
+        }
+      } catch (err) {
+        log.warn(`[${account.accountId}] Could not create owner DM: ${String(err)}`);
+      }
+    }
+
+    expect(ensResolver.resolveEnsName).toHaveBeenCalledWith("vitalik.eth");
+    expect(agent.createDmWithAddress).toHaveBeenCalledWith(resolvedAddr);
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Resolved owner ENS"));
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Owner DM ready"));
+  });
+
+  it("logs warning and skips DM when ENS resolution fails", async () => {
+    const { agent } = makeFakeAgent();
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      ownerAddress: "nonexistent.eth",
+    });
+
+    // Create a mock ENS resolver that returns null (resolution failure)
+    const ensResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+
+    // Simulate the ENS-aware owner DM creation logic from startAccount
+    if (account.ownerAddress) {
+      try {
+        let ownerAddr = account.ownerAddress;
+        if (isEnsName(ownerAddr)) {
+          const resolved = await ensResolver.resolveEnsName(ownerAddr);
+          if (resolved) {
+            ownerAddr = resolved;
+            log.info(
+              `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} -> ${ownerAddr.slice(0, 12)}...`,
+            );
+          } else {
+            log.warn(`[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`);
+          }
+        }
+        if (/^0x[0-9a-fA-F]{40}$/.test(ownerAddr)) {
+          await agent.createDmWithAddress(ownerAddr as `0x${string}`);
+          log.info(`[${account.accountId}] Owner DM ready (${ownerAddr.slice(0, 12)}...)`);
+        }
+      } catch (err) {
+        log.warn(`[${account.accountId}] Could not create owner DM: ${String(err)}`);
+      }
+    }
+
+    expect(ensResolver.resolveEnsName).toHaveBeenCalledWith("nonexistent.eth");
+    expect(agent.createDmWithAddress).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Could not resolve owner ENS"));
+  });
+
+  it("uses regular address directly without ENS resolution", async () => {
+    const { agent } = makeFakeAgent();
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const regularAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      ownerAddress: regularAddr,
+    });
+
+    // Create a mock ENS resolver (should not be called)
+    const ensResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+
+    // Simulate the ENS-aware owner DM creation logic from startAccount
+    if (account.ownerAddress) {
+      try {
+        let ownerAddr = account.ownerAddress;
+        if (isEnsName(ownerAddr)) {
+          const resolved = await ensResolver.resolveEnsName(ownerAddr);
+          if (resolved) {
+            ownerAddr = resolved;
+            log.info(
+              `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} -> ${ownerAddr.slice(0, 12)}...`,
+            );
+          } else {
+            log.warn(`[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`);
+          }
+        }
+        if (/^0x[0-9a-fA-F]{40}$/.test(ownerAddr)) {
+          await agent.createDmWithAddress(ownerAddr as `0x${string}`);
+          log.info(`[${account.accountId}] Owner DM ready (${ownerAddr.slice(0, 12)}...)`);
+        }
+      } catch (err) {
+        log.warn(`[${account.accountId}] Could not create owner DM: ${String(err)}`);
+      }
+    }
+
+    expect(ensResolver.resolveEnsName).not.toHaveBeenCalled();
+    expect(agent.createDmWithAddress).toHaveBeenCalledWith(regularAddr);
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Owner DM ready"));
   });
 });

@@ -22,6 +22,7 @@ import {
   handleInboundMessage,
   handleInboundReaction,
 } from "./channel.js";
+import { createEnsResolver, setResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { getClientForAccount, setClientForAccount } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
@@ -31,6 +32,7 @@ import { getXmtpRuntime } from "./runtime.js";
 // ---------------------------------------------------------------------------
 
 export async function stopAgent(accountId: string, log?: RuntimeLogger): Promise<void> {
+  setResolverForAccount(accountId, null); // Clean up resolver
   const agent = getClientForAccount(accountId);
   if (agent) {
     try {
@@ -61,6 +63,10 @@ export async function startAccount(ctx: {
 
   const stateDir = runtime.state.resolveStateDir();
   const agent = await createAgentFromAccount(account, stateDir);
+
+  // Create ENS resolver for this account
+  const ensResolver = createEnsResolver(account.config.web3BioApiKey);
+  setResolverForAccount(account.accountId, ensResolver);
 
   agent.errors.use(async (error, _ctx, next) => {
     log?.error(`[${account.accountId}] Agent error: ${String(error)}`);
@@ -94,8 +100,24 @@ export async function startAccount(ctx: {
   // Proactively open DM with owner so the channel is ready
   if (account.ownerAddress) {
     try {
-      await agent.createDmWithAddress(account.ownerAddress as `0x${string}`);
-      log?.info(`[${account.accountId}] Owner DM ready (${account.ownerAddress.slice(0, 12)}...)`);
+      let ownerAddr = account.ownerAddress;
+      if (isEnsName(ownerAddr)) {
+        const resolved = await ensResolver.resolveEnsName(ownerAddr);
+        if (resolved) {
+          ownerAddr = resolved;
+          log?.info(
+            `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} → ${ownerAddr.slice(0, 12)}...`,
+          );
+        } else {
+          log?.warn?.(
+            `[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`,
+          );
+        }
+      }
+      if (/^0x[0-9a-fA-F]{40}$/.test(ownerAddr)) {
+        await agent.createDmWithAddress(ownerAddr as `0x${string}`);
+        log?.info(`[${account.accountId}] Owner DM ready (${ownerAddr.slice(0, 12)}...)`);
+      }
     } catch (err) {
       log?.warn?.(`[${account.accountId}] Could not create owner DM: ${String(err)}`);
     }
