@@ -5,6 +5,7 @@
 
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import type { ResolvedXmtpAccount } from "./accounts.js";
+import { getResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
 import { getClientForAccount } from "./outbound.js";
 
 const CHANNEL_ID = "xmtp";
@@ -67,8 +68,13 @@ export async function evaluateDmAccess(params: {
 
   // Owner is always allowed (unless DMs are fully disabled)
   if (account.ownerAddress) {
-    const normalizedOwner = normalizeXmtpAddress(account.ownerAddress);
-    if (normalizedOwner && normalizedSender.toLowerCase() === normalizedOwner.toLowerCase()) {
+    let ownerAddr = normalizeXmtpAddress(account.ownerAddress);
+    if (isEnsName(ownerAddr)) {
+      const resolver = getResolverForAccount(account.accountId);
+      const resolved = resolver ? await resolver.resolveEnsName(ownerAddr) : null;
+      if (resolved) ownerAddr = resolved;
+    }
+    if (ownerAddr && normalizedSender.toLowerCase() === ownerAddr.toLowerCase()) {
       return { allowed: true };
     }
   }
@@ -77,11 +83,23 @@ export async function evaluateDmAccess(params: {
   const configAllow = (account.config.allowFrom ?? []).map((v) => String(v).trim()).filter(Boolean);
   const storeAllow = await runtime.channel.pairing.readAllowFromStore(CHANNEL_ID);
   const combinedAllow = [...configAllow, ...storeAllow];
+
+  // Resolve ENS names in allow list
+  const resolver = getResolverForAccount(account.accountId);
+  const resolvedAllow: string[] = [];
+  for (const entry of combinedAllow) {
+    const normalized = normalizeXmtpAddress(entry);
+    if (isEnsName(normalized) && resolver) {
+      const resolved = await resolver.resolveEnsName(normalized);
+      resolvedAllow.push(resolved ?? normalized);
+    } else {
+      resolvedAllow.push(normalized);
+    }
+  }
+
   const allowed =
     combinedAllow.includes("*") ||
-    combinedAllow.some(
-      (entry) => normalizeXmtpAddress(entry).toLowerCase() === normalizedSender.toLowerCase(),
-    );
+    resolvedAllow.some((entry) => entry.toLowerCase() === normalizedSender.toLowerCase());
 
   if (allowed) {
     return { allowed: true };
