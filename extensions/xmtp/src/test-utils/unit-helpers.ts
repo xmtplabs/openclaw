@@ -209,6 +209,7 @@ export function makeFakeAgent(opts?: { conversationId?: string }) {
       sentMessages.push(text);
       return "msg-id";
     }),
+    sendRemoteAttachment: vi.fn(async () => "msg-attachment-id"),
   };
 
   const agent = {

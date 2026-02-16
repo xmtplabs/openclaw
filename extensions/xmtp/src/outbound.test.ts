@@ -4,7 +4,7 @@
  */
 
 import type { PluginRuntime } from "openclaw/plugin-sdk";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { CoreConfig } from "./accounts.js";
 import { xmtpMessageActions } from "./actions.js";
 import {
@@ -15,6 +15,30 @@ import {
 } from "./outbound.js";
 import { getXmtpRuntime, setXmtpRuntime } from "./runtime.js";
 import { makeFakeAgent } from "./test-utils/unit-helpers.js";
+
+vi.mock("@xmtp/agent-sdk", () => ({
+  encryptAttachment: vi.fn(
+    (attachment: { filename?: string; mimeType: string; content: Uint8Array }) => ({
+      payload: new Uint8Array([1, 2, 3, 4]),
+      contentDigest: "abc123digest",
+      secret: new Uint8Array([5, 6, 7]),
+      salt: new Uint8Array([8, 9, 10]),
+      nonce: new Uint8Array([11, 12, 13]),
+      contentLength: 4,
+      filename: attachment.filename,
+    }),
+  ),
+  createRemoteAttachment: vi.fn((encrypted: Record<string, unknown>, fileUrl: string) => ({
+    url: fileUrl,
+    contentDigest: encrypted.contentDigest,
+    secret: encrypted.secret,
+    salt: encrypted.salt,
+    nonce: encrypted.nonce,
+    scheme: "https:",
+    contentLength: encrypted.contentLength,
+    filename: encrypted.filename,
+  })),
+}));
 
 const ACCOUNT_ID = "default";
 const CONVERSATION_ID = "convo-12345";
@@ -217,6 +241,218 @@ describe("XMTP outbound adapter", () => {
       });
 
       expect(fakeConversation.sendText).toHaveBeenCalledWith("");
+    });
+  });
+
+  describe("sendMedia with remote attachment", () => {
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("downloads media, encrypts, uploads to Pinata, and sends remote attachment", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+
+      const cfg = makeCfg({
+        channels: {
+          xmtp: {
+            walletKey: VALID_WALLET_KEY,
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            pinataApiKey: "test-api-key",
+            pinataSecretKey: "test-secret-key",
+          },
+        },
+      });
+
+      globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = typeof url === "string" ? url : url.toString();
+        if (urlStr.includes("example.com")) {
+          return {
+            ok: true,
+            headers: new Headers({ "content-type": "image/png" }),
+            arrayBuffer: async () => new ArrayBuffer(8),
+          } as Response;
+        }
+        if (urlStr.includes("pinata.cloud")) {
+          return {
+            ok: true,
+            json: async () => ({ IpfsHash: "QmTestHash123" }),
+          } as Response;
+        }
+        throw new Error(`Unexpected fetch: ${urlStr}`);
+      }) as typeof fetch;
+
+      const result = await xmtpOutbound.sendMedia!({
+        cfg,
+        to: CONVERSATION_ID,
+        mediaUrl: "https://example.com/image.png",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(fakeConversation.sendRemoteAttachment).toHaveBeenCalledTimes(1);
+      expect(result.channel).toBe("xmtp");
+    });
+
+    it("sends caption text before attachment", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+
+      const cfg = makeCfg({
+        channels: {
+          xmtp: {
+            walletKey: VALID_WALLET_KEY,
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            pinataApiKey: "test-api-key",
+            pinataSecretKey: "test-secret-key",
+          },
+        },
+      });
+
+      globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = typeof url === "string" ? url : url.toString();
+        if (urlStr.includes("example.com")) {
+          return {
+            ok: true,
+            headers: new Headers({ "content-type": "image/jpeg" }),
+            arrayBuffer: async () => new ArrayBuffer(4),
+          } as Response;
+        }
+        if (urlStr.includes("pinata.cloud")) {
+          return {
+            ok: true,
+            json: async () => ({ IpfsHash: "QmTestHash456" }),
+          } as Response;
+        }
+        throw new Error(`Unexpected fetch: ${urlStr}`);
+      }) as typeof fetch;
+
+      await xmtpOutbound.sendMedia!({
+        cfg,
+        to: CONVERSATION_ID,
+        mediaUrl: "https://example.com/photo.jpg",
+        text: "Check this out",
+        accountId: ACCOUNT_ID,
+      });
+
+      // Caption sent as text first
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("Check this out");
+      // Attachment sent
+      expect(fakeConversation.sendRemoteAttachment).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to text when Pinata credentials not configured", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg(); // No Pinata credentials
+
+      const result = await xmtpOutbound.sendMedia!({
+        cfg,
+        to: CONVERSATION_ID,
+        mediaUrl: "https://example.com/image.png",
+        accountId: ACCOUNT_ID,
+      });
+
+      // Should fall back to sending URL as text
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("https://example.com/image.png");
+      expect(result.channel).toBe("xmtp");
+    });
+
+    it("falls back to text when download fails", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+
+      const cfg = makeCfg({
+        channels: {
+          xmtp: {
+            walletKey: VALID_WALLET_KEY,
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            pinataApiKey: "test-api-key",
+            pinataSecretKey: "test-secret-key",
+          },
+        },
+      });
+
+      globalThis.fetch = vi.fn(
+        async () => ({ ok: false, status: 404 }) as Response,
+      ) as typeof fetch;
+
+      const result = await xmtpOutbound.sendMedia!({
+        cfg,
+        to: CONVERSATION_ID,
+        mediaUrl: "https://example.com/missing.png",
+        text: "fallback text",
+        accountId: ACCOUNT_ID,
+      });
+
+      // Caption was sent first (text && mediaUrl is true)
+      // Then download failed, so fallback sends text
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("fallback text");
+    });
+
+    it("uses custom IPFS gateway URL when configured", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+
+      const cfg = makeCfg({
+        channels: {
+          xmtp: {
+            walletKey: VALID_WALLET_KEY,
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            pinataApiKey: "test-api-key",
+            pinataSecretKey: "test-secret-key",
+            ipfsGatewayUrl: "https://custom-gateway.example.com/ipfs/",
+          },
+        },
+      });
+
+      const fetchCalls: string[] = [];
+      globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+        const urlStr = typeof url === "string" ? url : url.toString();
+        fetchCalls.push(urlStr);
+        if (urlStr.includes("example.com/image")) {
+          return {
+            ok: true,
+            headers: new Headers({ "content-type": "image/png" }),
+            arrayBuffer: async () => new ArrayBuffer(8),
+          } as Response;
+        }
+        if (urlStr.includes("pinata.cloud")) {
+          return {
+            ok: true,
+            json: async () => ({ IpfsHash: "QmCustomHash" }),
+          } as Response;
+        }
+        throw new Error(`Unexpected fetch: ${urlStr}`);
+      }) as typeof fetch;
+
+      const result = await xmtpOutbound.sendMedia!({
+        cfg,
+        to: CONVERSATION_ID,
+        mediaUrl: "https://example.com/image.png",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(fakeConversation.sendRemoteAttachment).toHaveBeenCalledTimes(1);
+      // Verify the remote attachment uses the custom gateway URL
+      const remoteAttachmentArg = (
+        fakeConversation.sendRemoteAttachment as ReturnType<typeof vi.fn>
+      ).mock.calls[0][0];
+      expect(remoteAttachmentArg.url).toContain("custom-gateway.example.com");
+      expect(result.channel).toBe("xmtp");
     });
   });
 });

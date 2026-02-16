@@ -50,6 +50,15 @@ export const XMTPConfigSchema = z.object({
 
   /** Ethereum address for display; derived from walletKey if not set. */
   publicAddress: z.string().optional(),
+
+  /** Pinata API key for IPFS upload of media attachments. */
+  pinataApiKey: z.string().optional(),
+
+  /** Pinata secret key for IPFS upload of media attachments. */
+  pinataSecretKey: z.string().optional(),
+
+  /** Custom IPFS gateway URL (default: https://gateway.pinata.cloud/ipfs/). */
+  ipfsGatewayUrl: z.string().url().optional(),
 });
 
 export type XMTPConfigInput = z.infer<typeof XMTPConfigSchema>;

@@ -31,6 +31,12 @@ export type XMTPAccountConfig = {
   textChunkLimit?: number;
   /** Ethereum address for display; derived from walletKey if not set. */
   publicAddress?: string;
+  /** Pinata API key for IPFS upload of media attachments. */
+  pinataApiKey?: string;
+  /** Pinata secret key for IPFS upload of media attachments. */
+  pinataSecretKey?: string;
+  /** Custom IPFS gateway URL (default: https://gateway.pinata.cloud/ipfs/). */
+  ipfsGatewayUrl?: string;
 };
 
 export type XMTPConfig = {
