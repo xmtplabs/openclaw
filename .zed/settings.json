@@ -1,0 +1,54 @@
+{
+  // Equivalent to VS Code's files.insertFinalNewline + files.trimFinalNewlines
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+
+  "lsp": {
+    // OXC linter configuration
+    "oxlint": {
+      "initialization_options": {
+        "settings": {
+          "run": "onType",
+          "fixKind": "safe_fix"
+        }
+      }
+    },
+    // TypeScript language server settings (Zed uses vtsls by default)
+    "vtsls": {
+      "settings": {
+        "typescript": {
+          "tsdk": "node_modules/typescript/lib",
+          "preferences": {
+            "importModuleSpecifierEnding": "js"
+          },
+          "updateImportsOnFileMove": {
+            "enabled": "always"
+          }
+        }
+      }
+    }
+  },
+
+  "languages": {
+    "JavaScript": {
+      "format_on_save": "on",
+      "prettier": { "allowed": false },
+      "formatter": [{ "language_server": { "name": "oxfmt" } }]
+    },
+    "TypeScript": {
+      "format_on_save": "on",
+      "prettier": { "allowed": false },
+      "formatter": [{ "language_server": { "name": "oxfmt" } }]
+    },
+    "TSX": {
+      "format_on_save": "on",
+      "prettier": { "allowed": false },
+      "formatter": [{ "language_server": { "name": "oxfmt" } }]
+    },
+    "JSON": {
+      "format_on_save": "on",
+      "prettier": { "allowed": false },
+      "formatter": [{ "language_server": { "name": "oxfmt" } }]
+    }
+  }
+}

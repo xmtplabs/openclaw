@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { isGroupAllowed } from "./channel.js";
+import { isGroupAllowed, xmtpPlugin } from "./channel.js";
 import { setClientForAccount } from "./outbound.js";
 import {
   createTestAccount,
@@ -257,6 +257,74 @@ describe("XMTP message flow", () => {
         ([msg]: [string]) => typeof msg === "string" && msg.includes("Inbound from"),
       );
       expect(inboundCalls).toHaveLength(0);
+    });
+  });
+
+  describe("ENS-aware target resolution", () => {
+    const looksLikeId = xmtpPlugin.messaging!.targetResolver!.looksLikeId!;
+
+    it("recognizes Ethereum addresses", () => {
+      expect(looksLikeId("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")).toBe(true);
+    });
+
+    it("recognizes ENS names", () => {
+      expect(looksLikeId("nick.eth")).toBe(true);
+      expect(looksLikeId("pay.nick.eth")).toBe(true);
+      expect(looksLikeId("vitalik.eth")).toBe(true);
+    });
+
+    it("rejects empty strings", () => {
+      expect(looksLikeId("")).toBe(false);
+      expect(looksLikeId("  ")).toBe(false);
+    });
+
+    it("rejects non-ENS non-address strings", () => {
+      expect(looksLikeId("hello")).toBe(false);
+      expect(looksLikeId("not-an-address")).toBe(false);
+    });
+
+    it("hint mentions ENS name", () => {
+      expect(xmtpPlugin.messaging!.targetResolver!.hint).toContain("ENS");
+    });
+  });
+
+  describe("ENS-aware agent prompt hints", () => {
+    it("mentions ENS names in the first tool hint", () => {
+      const cfg = {
+        channels: {
+          xmtp: {
+            walletKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          },
+        },
+      };
+      const hints = xmtpPlugin.agentPrompt!.messageToolHints!({
+        cfg,
+        accountId: "default",
+      });
+      expect(hints[0]).toContain("ENS");
+      expect(hints[0]).toContain("name.eth");
+    });
+
+    it("includes hint about using ENS names for users", () => {
+      const cfg = {
+        channels: {
+          xmtp: {
+            walletKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            dbEncryptionKey: "testenc",
+            env: "dev",
+            publicAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          },
+        },
+      };
+      const hints = xmtpPlugin.agentPrompt!.messageToolHints!({
+        cfg,
+        accountId: "default",
+      });
+      const ensHint = hints.find((h: string) => h.includes("ENS name") && h.includes("nick.eth"));
+      expect(ensHint).toBeDefined();
     });
   });
 });

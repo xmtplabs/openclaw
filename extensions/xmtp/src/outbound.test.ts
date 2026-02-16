@@ -7,6 +7,7 @@ import type { PluginRuntime } from "openclaw/plugin-sdk";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { CoreConfig } from "./accounts.js";
 import { xmtpMessageActions } from "./actions.js";
+import { setResolverForAccount } from "./lib/ens-resolver.js";
 import {
   xmtpOutbound,
   setClientForAccount,
@@ -453,6 +454,104 @@ describe("XMTP outbound adapter", () => {
       ).mock.calls[0][0];
       expect(remoteAttachmentArg.url).toContain("custom-gateway.example.com");
       expect(result.channel).toBe("xmtp");
+    });
+  });
+
+  describe("ENS resolution for outbound targets", () => {
+    const RESOLVED_ADDRESS = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+
+    afterEach(() => {
+      setResolverForAccount(ACCOUNT_ID, null);
+    });
+
+    it("sendText resolves ENS name to address before sending", async () => {
+      const { agent, fakeConversation } = makeFakeAgent();
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      setResolverForAccount(ACCOUNT_ID, {
+        resolveEnsName: vi.fn(async () => RESOLVED_ADDRESS),
+        resolveAddress: vi.fn(async () => null),
+        resolveAll: vi.fn(async () => new Map()),
+      });
+      const cfg = makeCfg();
+
+      await xmtpOutbound.sendText!({
+        cfg,
+        to: "vitalik.eth",
+        text: "Hello ENS!",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(RESOLVED_ADDRESS);
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("Hello ENS!");
+    });
+
+    it("sendMedia resolves ENS name to address before sending", async () => {
+      const { agent, fakeConversation } = makeFakeAgent();
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      setResolverForAccount(ACCOUNT_ID, {
+        resolveEnsName: vi.fn(async () => RESOLVED_ADDRESS),
+        resolveAddress: vi.fn(async () => null),
+        resolveAll: vi.fn(async () => new Map()),
+      });
+      const cfg = makeCfg();
+
+      await xmtpOutbound.sendMedia!({
+        cfg,
+        to: "vitalik.eth",
+        mediaUrl: "https://example.com/image.png",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(RESOLVED_ADDRESS);
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("https://example.com/image.png");
+    });
+
+    it("falls back to original value when ENS resolution returns null", async () => {
+      const { agent } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      setResolverForAccount(ACCOUNT_ID, {
+        resolveEnsName: vi.fn(async () => null),
+        resolveAddress: vi.fn(async () => null),
+        resolveAll: vi.fn(async () => new Map()),
+      });
+      const cfg = makeCfg();
+
+      // nick.eth will be unresolved (null) — should use original "nick.eth" as target
+      // Since "nick.eth" doesn't match CONVERSATION_ID and doesn't start with 0x, it throws
+      await expect(
+        xmtpOutbound.sendText!({
+          cfg,
+          to: "nick.eth",
+          text: "Hello!",
+          accountId: ACCOUNT_ID,
+        }),
+      ).rejects.toThrow("Conversation not found");
+
+      // It should have tried to look up "nick.eth" directly since resolution failed
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith("nick.eth");
+    });
+
+    it("passes non-ENS targets through without resolution", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const mockResolveEnsName = vi.fn(async () => RESOLVED_ADDRESS);
+      setResolverForAccount(ACCOUNT_ID, {
+        resolveEnsName: mockResolveEnsName,
+        resolveAddress: vi.fn(async () => null),
+        resolveAll: vi.fn(async () => new Map()),
+      });
+      const cfg = makeCfg();
+
+      await xmtpOutbound.sendText!({
+        cfg,
+        to: CONVERSATION_ID,
+        text: "Hello!",
+        accountId: ACCOUNT_ID,
+      });
+
+      // Should NOT have called resolveEnsName since CONVERSATION_ID is not an ENS name
+      expect(mockResolveEnsName).not.toHaveBeenCalled();
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(CONVERSATION_ID);
     });
   });
 });

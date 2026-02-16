@@ -11,6 +11,7 @@ import {
   updateXmtpSection,
   type CoreConfig,
 } from "./accounts.js";
+import { isEnsName } from "./lib/ens-resolver.js";
 import {
   generateEncryptionKeyHex,
   generatePrivateKey,
@@ -165,12 +166,13 @@ export const xmtpOnboardingAdapter: ChannelOnboardingAdapter = {
     }
 
     const ownerAddr = await prompter.text({
-      message: "Owner wallet address (auto-paired, press Enter to skip)",
-      placeholder: "0x...",
+      message: "Owner wallet address or ENS name (auto-paired, press Enter to skip)",
+      placeholder: "0x... or name.eth",
       validate: (value) => {
         const raw = String(value ?? "").trim();
         if (!raw) return undefined; // optional
-        if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) return "Invalid Ethereum address";
+        if (isEnsName(raw)) return undefined; // ENS name accepted
+        if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) return "Invalid Ethereum address or ENS name";
         return undefined;
       },
     });

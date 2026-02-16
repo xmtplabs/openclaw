@@ -10,6 +10,7 @@ import {
   normalizeXmtpAddress,
   sendPairingReply,
 } from "./dm-policy.js";
+import { setResolverForAccount, createEnsResolver } from "./lib/ens-resolver.js";
 import { setClientForAccount } from "./outbound.js";
 import {
   createTestAccount,
@@ -399,6 +400,90 @@ describe("evaluateDmAccess", () => {
       });
       expect(mocks.upsertPairingRequest).toHaveBeenCalled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ENS resolution in evaluateDmAccess
+// ---------------------------------------------------------------------------
+
+describe("ENS resolution in evaluateDmAccess", () => {
+  const mockFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch);
+    mockFetch.mockReset();
+    setResolverForAccount("default", null);
+  });
+
+  function setupResolver() {
+    const resolver = createEnsResolver();
+    setResolverForAccount("default", resolver);
+  }
+
+  function mockResolve(address: string) {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ address }),
+    });
+  }
+
+  it("allows sender when ownerAddress is an ENS name that resolves to sender", async () => {
+    setupResolver();
+    mockResolve(TEST_SENDER_ADDRESS);
+
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      dmPolicy: "pairing",
+      ownerAddress: "owner.eth",
+    });
+    const { runtime } = makeMockRuntime();
+
+    const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+    expect(result).toEqual({ allowed: true });
+  });
+
+  it("allows sender when allowFrom contains ENS name that resolves to sender", async () => {
+    setupResolver();
+    mockResolve(TEST_SENDER_ADDRESS);
+
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      dmPolicy: "allowlist",
+      allowFrom: ["friend.eth"],
+    });
+    const { runtime } = makeMockRuntime();
+
+    const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+    expect(result).toEqual({ allowed: true });
+  });
+
+  it("blocks sender when ENS name resolves to different address", async () => {
+    setupResolver();
+    mockResolve("0x0000000000000000000000000000000000000000");
+
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      dmPolicy: "allowlist",
+      allowFrom: ["other.eth"],
+    });
+    const { runtime } = makeMockRuntime();
+
+    const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+    expect(result).toEqual({ allowed: false, reason: "blocked", dmPolicy: "allowlist" });
+  });
+
+  it("works without resolver (graceful degradation)", async () => {
+    // No resolver set — ENS names in allowFrom can't be resolved
+    const account = createTestAccount({
+      address: TEST_OWNER_ADDRESS,
+      dmPolicy: "allowlist",
+      allowFrom: ["friend.eth"],
+    });
+    const { runtime } = makeMockRuntime();
+
+    const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+    expect(result).toEqual({ allowed: false, reason: "blocked", dmPolicy: "allowlist" });
   });
 });
 

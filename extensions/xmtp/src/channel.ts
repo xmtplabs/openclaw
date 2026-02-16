@@ -31,6 +31,7 @@ import {
 } from "./dm-policy.js";
 import { startAccount, stopAccountHandler } from "./gateway-lifecycle.js";
 import { runInboundPipeline } from "./inbound-pipeline.js";
+import { isEnsName } from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
 import { getClientForAccount, xmtpOutbound } from "./outbound.js";
@@ -71,6 +72,9 @@ export async function handleInboundMessage(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, content, messageId, isDirect, runtime, log } = params;
 
@@ -132,6 +136,9 @@ export async function handleInboundMessage(params: {
     isDirect,
     runtime,
     log,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -158,6 +165,9 @@ export async function handleInboundReaction(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, reaction, messageId, isDirect, runtime, log } = params;
 
@@ -210,6 +220,9 @@ export async function handleInboundReaction(params: {
     isDirect,
     runtime,
     log,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -236,6 +249,9 @@ export async function handleInboundAttachment(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, remoteAttachments, messageId, isDirect, runtime, log } =
     params;
@@ -311,6 +327,9 @@ export async function handleInboundAttachment(params: {
     runtime,
     log,
     media,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -337,6 +356,9 @@ export async function handleInboundInlineAttachment(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, attachments, messageId, isDirect, runtime, log } =
     params;
@@ -413,6 +435,9 @@ export async function handleInboundInlineAttachment(params: {
     runtime,
     log,
     media,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -544,16 +569,18 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         if (!t) return false;
         // Ethereum address: exactly 42 hex chars (0x + 40)
         if (t.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(t)) return true;
+        if (isEnsName(t)) return true;
         return false;
       },
-      hint: "<address or conversation topic>",
+      hint: "<address, ENS name, or conversation topic>",
     },
   },
   actions: xmtpMessageActions,
   agentPrompt: {
     messageToolHints: ({ cfg, accountId }) => {
       const hints = [
-        "- XMTP targets are wallet addresses or conversation topics. Use `to=<address>` for `action=send`.",
+        "- XMTP targets are wallet addresses, ENS names, or conversation topics. Use `to=<address or name.eth>` for `action=send`.",
+        "- When ENS names are available (in SenderName, GroupMembers, or [ENS Context] blocks), always refer to users by their ENS name (e.g., nick.eth) rather than raw Ethereum addresses.",
         "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
       ];
       try {
