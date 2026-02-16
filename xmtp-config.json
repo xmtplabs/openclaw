@@ -25,7 +25,9 @@ cat > /data/openclaw.json << 'EOF'
       "enabled": true,
       "ownerAddress": "0xa2b9ab5cd400f1f6ea5f54f0f68c75419c89abcb",
       "env": "dev",
-      "dmPolicy": "pairing"
+      "dmPolicy": "pairing",
+      "pinataApiKey": "${PINATA_API_KEY}",
+      "pinataSecretKey": "${PINATA_SECRET_KEY}"
     }
   },
   "gateway": {

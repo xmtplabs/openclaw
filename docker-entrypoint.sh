@@ -4,6 +4,7 @@ set -e
 # If running as root (typical in Docker/Fly.io), fix volume ownership
 # then drop to the unprivileged node user.
 if [ "$(id -u)" = "0" ]; then
+    mkdir -p /data/xmtp || true
     # Fix ownership on the data/state directory if it exists
     if [ -d "/data" ]; then
         chown -R node:node /data
