@@ -245,6 +245,7 @@ export async function callInbound(params: {
   account: ResolvedXmtpAccount;
   sender?: string;
   conversationId?: string;
+  isDirect?: boolean;
   content?: string;
   messageId?: string;
   runtime: PluginRuntime;
@@ -259,5 +260,16 @@ export async function callInbound(params: {
     log,
   } = params;
   const conversationId = params.conversationId ?? sender;
-  return handleInboundMessage(account, sender, conversationId, content, messageId, runtime, log);
+  // Default: if conversationId was not explicitly set, treat as DM
+  const isDirect = params.isDirect ?? params.conversationId === undefined;
+  return handleInboundMessage(
+    account,
+    sender,
+    conversationId,
+    content,
+    messageId,
+    isDirect,
+    runtime,
+    log,
+  );
 }

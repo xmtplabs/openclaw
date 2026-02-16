@@ -77,6 +77,7 @@ export async function handleInboundMessage(
   conversationId: string,
   content: string,
   messageId: string | undefined,
+  isDirect: boolean,
   runtime: PluginRuntime,
   log?: RuntimeLogger,
 ) {
@@ -85,8 +86,6 @@ export async function handleInboundMessage(
       `[${account.accountId}] Inbound from ${sender.slice(0, 12)}: ${content.slice(0, 50)}`,
     );
   }
-
-  const isDirect = conversationId === sender;
 
   if (!isDirect && !isGroupAllowed({ account, conversationId })) {
     if (account.debug) {
@@ -485,12 +484,14 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         const sender = await msgCtx.getSenderAddress();
         const conversation = msgCtx.conversation;
         const conversationId = conversation?.id as string;
+        const isDirect = msgCtx.isDm();
         handleInboundMessage(
           account,
           sender,
           conversationId,
           msgCtx.message.content,
           msgCtx.message.id,
+          isDirect,
           runtime,
           log,
         ).catch((err) => {
