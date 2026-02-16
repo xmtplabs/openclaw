@@ -551,6 +551,22 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  extensions/xmtp:
+    dependencies:
+      '@xmtp/agent-sdk':
+        specifier: ^2.0.1
+        version: 2.2.0(typescript@5.9.3)(zod@4.3.6)
+      viem:
+        specifier: ^2.21.0
+        version: 2.46.0(typescript@5.9.3)(zod@4.3.6)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/zalo:
     dependencies:
       undici:
@@ -3343,11 +3359,18 @@ packages:
     resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67}
     version: 2.0.1
 
+  '@xmtp/agent-sdk@2.2.0':
+    resolution: {integrity: sha512-BkDOpLqjEywD/AhqPwbwhw4iIgOIsJq92rBXiKy6Fg4KdyohjfQIGiZO8WpReNKlLNnZRGkdbPALL7yZ8xql3w==}
+    engines: {node: '>=22'}
+
   '@xmtp/content-type-primitives@2.0.3':
     resolution: {integrity: sha512-JOTaNHhcqNO1uAZV9wE8TLEtEgMApuzuoAKMuMRXsKXfAb86G7Pe84moVsr20r7VaIqDjhDlzPw1GYYs7DMODw==}
 
   '@xmtp/content-type-primitives@3.0.0':
     resolution: {integrity: sha512-gxK6+k0ywOz39LFJjrUF3fOXWXR3aAmIkF7e0rFz7c27izDimZC5E2oja9iz/CYyzDS6lf9Pm31qRcGTMSYaHg==}
+
+  '@xmtp/content-type-primitives@3.0.1':
+    resolution: {integrity: sha512-qM8d3+9A2aKwYuHkkl84BnnECtKop21PMzu7l8NYsTX1qvEkM+sfIqCwiLw4CgYD87OMAzDVCxDNGj1E/g/pWg==}
 
   '@xmtp/content-type-remote-attachment@2.0.4':
     resolution: {integrity: sha512-dHXXIsbn1y+PbNMXbQPkfjXr9LQ0QfQS8tIu/Hz6nL4h5QG5ECHsHfHVzVWE3P0eHlGfLVnQaKqg2dFiP8uwXw==}
@@ -9332,6 +9355,17 @@ snapshots:
       curve25519-js: 0.0.4
       protobufjs: 6.8.8
 
+  '@xmtp/agent-sdk@2.2.0(typescript@5.9.3)(zod@4.3.6)':
+    dependencies:
+      '@xmtp/content-type-primitives': 3.0.1
+      '@xmtp/node-sdk': 5.3.0
+      viem: 2.46.0(typescript@5.9.3)(zod@4.3.6)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
+
   '@xmtp/content-type-primitives@2.0.3':
     dependencies:
       '@xmtp/proto': 3.78.0
@@ -9339,6 +9373,10 @@ snapshots:
   '@xmtp/content-type-primitives@3.0.0':
     dependencies:
       '@xmtp/node-bindings': 1.8.0
+
+  '@xmtp/content-type-primitives@3.0.1':
+    dependencies:
+      '@xmtp/node-bindings': 1.9.1
 
   '@xmtp/content-type-remote-attachment@2.0.4':
     dependencies:
