@@ -13,6 +13,7 @@ NODE_ENV = "production"
 OPENCLAW_PREFER_PNPM = "1"
 OPENCLAW_HOME = "/data"
 OPENCLAW_STATE_DIR = "/data/.openclaw"
+OPENCLAW_CONFIG_PATH = "/data/openclaw.json"
 NODE_OPTIONS = "--max-old-space-size=1536"
 
 [processes]
