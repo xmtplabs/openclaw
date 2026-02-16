@@ -243,6 +243,34 @@ describe("XMTP message flow", () => {
       expect(looksLikeId(input)).toBe(expected);
     });
 
+    it.each([
+      [
+        "32-char conversation ID via normalized",
+        "xmtp:8f83e95ea30dda840dce97bd9b8b21e4",
+        "8f83e95ea30dda840dce97bd9b8b21e4",
+        true,
+      ],
+      [
+        "64-char conversation topic via normalized",
+        "xmtp:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        true,
+      ],
+      ["short hex (15 chars) rejected", "xmtp:abcdef012345678", "abcdef012345678", false],
+      [
+        "non-hex chars in normalized rejected",
+        "xmtp:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        false,
+      ],
+    ] as const)("conversation ID: %s", (_desc, raw, normalized, expected) => {
+      expect(looksLikeId(raw, normalized)).toBe(expected);
+    });
+
+    it("recognizes bare hex conversation ID without normalized param", () => {
+      expect(looksLikeId("8f83e95ea30dda840dce97bd9b8b21e4")).toBe(true);
+    });
+
     it("hint mentions ENS name", () => {
       expect(xmtpPlugin.messaging!.targetResolver!.hint).toContain("ENS");
     });
