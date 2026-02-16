@@ -136,10 +136,46 @@ describe("backfillPublicAddress", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildTextHandler
+// Shared handler guard-clause tests (all 5 handler builders)
 // ---------------------------------------------------------------------------
 
-describe("buildTextHandler", () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const handlerCases: Array<{
+  name: string;
+  build: (p: { account: any; runtime: any; log?: any }) => (ctx: any) => Promise<void>;
+  validMsg: Record<string, unknown>;
+}> = [
+  {
+    name: "buildTextHandler",
+    build: buildTextHandler,
+    validMsg: { content: "hello", id: "msg-1" },
+  },
+  {
+    name: "buildReactionHandler",
+    build: buildReactionHandler,
+    validMsg: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
+  },
+  {
+    name: "buildAttachmentHandler",
+    build: buildAttachmentHandler,
+    validMsg: { content: { url: "https://example.com/file" }, id: "att-1" },
+  },
+  {
+    name: "buildInlineAttachmentHandler",
+    build: buildInlineAttachmentHandler,
+    validMsg: {
+      content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
+      id: "att-1",
+    },
+  },
+  {
+    name: "buildMultiAttachmentHandler",
+    build: buildMultiAttachmentHandler,
+    validMsg: { content: { attachments: [{ url: "https://example.com/file" }] }, id: "multi-1" },
+  },
+];
+
+describe.each(handlerCases)("$name", ({ build, validMsg }) => {
   beforeEach(() => {
     setClientForAccount("default", null);
     setXmtpRuntime({
@@ -152,10 +188,7 @@ describe("buildTextHandler", () => {
   it("returns a function", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime } = createMockRuntime();
-
-    const handler = buildTextHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
+    expect(typeof build({ account, runtime })).toBe("function");
   });
 
   it("skips denied contacts", async () => {
@@ -167,10 +200,10 @@ describe("buildTextHandler", () => {
     const { runtime, mocks } = createMockRuntime();
     const log = { info: vi.fn(), error: vi.fn() };
 
-    const handler = buildTextHandler({ account, runtime, log: log as any });
+    const handler = build({ account, runtime, log: log as any });
     await handler({
       isDenied: true,
-      message: { content: "hello", id: "msg-1" },
+      message: validMsg,
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
@@ -180,14 +213,14 @@ describe("buildTextHandler", () => {
     expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
   });
 
-  it("skips messages with non-string content", async () => {
+  it("skips messages with null content", async () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const handler = buildTextHandler({ account, runtime });
+    const handler = build({ account, runtime });
     await handler({
       isDenied: false,
-      message: { content: undefined, id: "msg-1" },
+      message: { content: undefined, id: "null-1" },
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
@@ -200,10 +233,10 @@ describe("buildTextHandler", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const handler = buildTextHandler({ account, runtime });
+    const handler = build({ account, runtime });
     await handler({
       isDenied: false,
-      message: { content: "hello", id: "msg-1" },
+      message: validMsg,
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => undefined,
@@ -213,11 +246,8 @@ describe("buildTextHandler", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// buildReactionHandler
-// ---------------------------------------------------------------------------
-
-describe("buildReactionHandler", () => {
+// buildMultiAttachmentHandler has one additional edge case
+describe("buildMultiAttachmentHandler (empty array)", () => {
   beforeEach(() => {
     setClientForAccount("default", null);
     setXmtpRuntime({
@@ -225,296 +255,6 @@ describe("buildReactionHandler", () => {
         text: { chunkMarkdownText: (text: string) => [text] },
       },
     } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildReactionHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips reactions with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips reactions when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: { content: { url: "https://example.com/file" }, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: { url: "https://example.com/file" }, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildInlineAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildInlineAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildInlineAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: {
-        content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
-        id: "att-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips inline attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips inline attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: {
-        content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
-        id: "att-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildMultiAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildMultiAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildMultiAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: {
-        content: { attachments: [{ url: "https://example.com/file" }] },
-        id: "multi-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips multi-attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "multi-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
   });
 
   it("skips multi-attachments with empty attachments array", async () => {
@@ -528,25 +268,6 @@ describe("buildMultiAttachmentHandler", () => {
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips multi-attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: {
-        content: { attachments: [{ url: "https://example.com/file" }] },
-        id: "multi-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
     } as any);
 
     expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();

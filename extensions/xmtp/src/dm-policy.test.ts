@@ -25,30 +25,19 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("normalizeXmtpAddress", () => {
-  it("strips xmtp: prefix", () => {
-    expect(normalizeXmtpAddress("xmtp:0xABC")).toBe("0xABC");
-  });
-
-  it("strips xmtp: prefix case-insensitively", () => {
-    expect(normalizeXmtpAddress("XMTP:0xABC")).toBe("0xABC");
-  });
-
-  it("trims whitespace", () => {
-    expect(normalizeXmtpAddress("  0xABC  ")).toBe("0xABC");
-  });
-
-  it("handles combined prefix and whitespace", () => {
-    expect(normalizeXmtpAddress("  xmtp:  0xABC  ")).toBe("0xABC");
-  });
-
-  it("returns empty string for empty input", () => {
-    expect(normalizeXmtpAddress("")).toBe("");
-  });
-
-  it("passes through normal addresses unchanged", () => {
-    expect(normalizeXmtpAddress("0xAbCdEf1234567890abcdef1234567890AbCdEf12")).toBe(
+  it.each([
+    ["strips xmtp: prefix", "xmtp:0xABC", "0xABC"],
+    ["strips prefix case-insensitively", "XMTP:0xABC", "0xABC"],
+    ["trims whitespace", "  0xABC  ", "0xABC"],
+    ["handles combined prefix and whitespace", "  xmtp:  0xABC  ", "0xABC"],
+    ["returns empty for empty input", "", ""],
+    [
+      "passes through normal addresses",
       "0xAbCdEf1234567890abcdef1234567890AbCdEf12",
-    );
+      "0xAbCdEf1234567890abcdef1234567890AbCdEf12",
+    ],
+  ])("%s", (_desc, input, expected) => {
+    expect(normalizeXmtpAddress(input)).toBe(expected);
   });
 });
 
@@ -57,46 +46,23 @@ describe("normalizeXmtpAddress", () => {
 // ---------------------------------------------------------------------------
 
 describe("isGroupAllowed", () => {
-  it("open policy allows any group", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, groupPolicy: "open" });
-    expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(true);
-  });
-
-  it("disabled policy blocks all groups", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, groupPolicy: "disabled" });
-    expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(false);
-  });
-
-  it("allowlist policy allows listed group", () => {
+  it.each([
+    ["open allows any group", "open", undefined, "any-group", true],
+    ["disabled blocks all groups", "disabled", undefined, "any-group", false],
+    ["allowlist allows listed group", "allowlist", ["group-123"], "group-123", true],
+    ["allowlist blocks unlisted group", "allowlist", ["group-123"], "group-456", false],
+    ["allowlist wildcard allows all", "allowlist", ["*"], "any-group", true],
+  ] as const)("%s", (_desc, groupPolicy, groups, conversationId, expected) => {
     const account = createTestAccount({
       address: TEST_OWNER_ADDRESS,
-      groupPolicy: "allowlist",
-      groups: ["group-123"],
+      groupPolicy: groupPolicy as any,
+      groups: groups as any,
     });
-    expect(isGroupAllowed({ account, conversationId: "group-123" })).toBe(true);
-  });
-
-  it("allowlist policy blocks unlisted group", () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      groupPolicy: "allowlist",
-      groups: ["group-123"],
-    });
-    expect(isGroupAllowed({ account, conversationId: "group-456" })).toBe(false);
-  });
-
-  it("allowlist with wildcard allows all groups", () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      groupPolicy: "allowlist",
-      groups: ["*"],
-    });
-    expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(true);
+    expect(isGroupAllowed({ account, conversationId })).toBe(expected);
   });
 
   it("defaults to open when groupPolicy not set", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS });
-    // groupPolicy defaults to "open" in createTestAccountConfig
     account.config.groupPolicy = undefined;
     expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(true);
   });
