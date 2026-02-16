@@ -1,7 +1,7 @@
 # OpenClaw Fly.io deployment configuration
 # See https://fly.io/docs/reference/configuration/
 
-app = "nicks-claw"
+app = "nicks-xmtp-claw"
 primary_region = "iad" # change to your closest region
 
 [build]
@@ -11,7 +11,8 @@ dockerfile = "Dockerfile"
 NODE_ENV = "production"
 # Fly uses x86, but keep this for consistency
 OPENCLAW_PREFER_PNPM = "1"
-OPENCLAW_STATE_DIR = "/data"
+OPENCLAW_HOME = "/data"
+OPENCLAW_STATE_DIR = "/data/.openclaw"
 NODE_OPTIONS = "--max-old-space-size=1536"
 
 [processes]
@@ -30,5 +31,5 @@ size = "shared-cpu-2x"
 memory = "2048mb"
 
 [mounts]
-source = "openclaw_data"
+source = "xmtp_claw_data"
 destination = "/data"
