@@ -10,11 +10,11 @@ The Convos plugin registers HTTP routes on the gateway server. All endpoints
 accept and return JSON. The gateway listens on `http://127.0.0.1:18789` by
 default.
 
-| Endpoint | Method | Body | Returns | Notes |
-|----------|--------|------|---------|-------|
-| `/convos/setup` | POST | `{ env?, name?, accountId? }` | `{ inviteUrl, conversationId, qrDataUrl }` | Creates XMTP identity + conversation in memory. `qrDataUrl` is a `data:image/png;base64,...` string ready for `<img src>`. |
-| `/convos/setup/status` | GET | none | `{ active, joined, joinerInboxId }` | Poll every 3 seconds. `joined` becomes `true` when a user scans the invite and joins. |
-| `/convos/setup/complete` | POST | none | `{ saved: true, conversationId }` | Persists the identity + conversation to config. Triggers a single gateway restart. Call only after `joined === true`. |
+| Endpoint                 | Method | Body                          | Returns                                    | Notes                                                                                                                      |
+| ------------------------ | ------ | ----------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `/convos/setup`          | POST   | `{ env?, name?, accountId? }` | `{ inviteUrl, conversationId, qrDataUrl }` | Creates XMTP identity + conversation in memory. `qrDataUrl` is a `data:image/png;base64,...` string ready for `<img src>`. |
+| `/convos/setup/status`   | GET    | none                          | `{ active, joined, joinerInboxId }`        | Poll every 3 seconds. `joined` becomes `true` when a user scans the invite and joins.                                      |
+| `/convos/setup/complete` | POST   | none                          | `{ saved: true, conversationId }`          | Persists the identity + conversation to config. Triggers a single gateway restart. Call only after `joined === true`.      |
 
 Errors return HTTP 4xx/5xx with `{ error: "message" }`.
 
@@ -87,12 +87,14 @@ const poll = setInterval(async () => {
 ## Architecture Change
 
 **Before (current template):**
+
 1. Template creates its own XMTP agent (duplicated SDK logic)
 2. Template saves config via `openclaw config set`
 3. Template starts gateway
 4. Multiple config writes cause cascading restarts
 
 **After:**
+
 1. Template starts gateway (minimal config)
 2. Template calls HTTP endpoints for Convos setup
 3. Single config write after join confirmed
@@ -110,6 +112,7 @@ restart via SIGUSR1. Multiple writes in quick succession cause a cascade of
 restarts.
 
 Instead, batch all config into a single write:
+
 - Use `openclaw config set key1=val1 key2=val2 ...` (single command)
 - Or write the config file once before starting the gateway
 - Or use the `config.update` gateway method to batch changes

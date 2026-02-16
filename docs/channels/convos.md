@@ -37,6 +37,7 @@ openclaw plugins install ./extensions/convos
 ### 1. Create a conversation and get invite link
 
 In the Convos iOS app:
+
 1. Open a conversation (or create a new one)
 2. Tap the "+" button
 3. Tap the share button on the QR code that appears
@@ -53,6 +54,7 @@ openclaw configure
 ```
 
 When prompted, paste the invite link. OpenClaw will:
+
 1. Create a new XMTP identity
 2. Join the conversation
 3. Save the configuration
@@ -73,14 +75,14 @@ Or manually add to `~/.openclaw/openclaw.json`:
 
 ## Configuration
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `true` | Enable/disable Convos |
-| `privateKey` | string | auto | XMTP identity key (hex, auto-generated) |
-| `env` | string | `production` | XMTP environment (production/dev) |
-| `ownerConversationId` | string | - | Conversation for owner communication |
-| `dmPolicy` | string | `pairing` | DM access policy |
-| `debug` | boolean | `false` | Enable debug logging |
+| Field                 | Type    | Default      | Description                             |
+| --------------------- | ------- | ------------ | --------------------------------------- |
+| `enabled`             | boolean | `true`       | Enable/disable Convos                   |
+| `privateKey`          | string  | auto         | XMTP identity key (hex, auto-generated) |
+| `env`                 | string  | `production` | XMTP environment (production/dev)       |
+| `ownerConversationId` | string  | -            | Conversation for owner communication    |
+| `dmPolicy`            | string  | `pairing`    | DM access policy                        |
+| `debug`               | boolean | `false`      | Enable debug logging                    |
 
 ## DM Policies
 
@@ -108,6 +110,7 @@ Or manually add to `~/.openclaw/openclaw.json`:
 ### Per-Conversation Identity
 
 Convos uses a unique XMTP inbox identity for each conversation. This provides:
+
 - Complete isolation between conversations
 - No cross-conversation tracking possible
 - Compromise of one conversation doesn't affect others
@@ -115,11 +118,13 @@ Convos uses a unique XMTP inbox identity for each conversation. This provides:
 ### Invite System
 
 Invite links are cryptographically signed and contain:
+
 - Encrypted conversation ID
 - Creator's identity for verification
 - Optional expiration and single-use flags
 
 When joining:
+
 1. OpenClaw decodes and verifies the invite signature
 2. Sends a join request to the conversation creator
 3. Creator approves and adds OpenClaw to the conversation
@@ -134,6 +139,7 @@ Some conversations require the creator to approve join requests. Check the Convo
 ### Invalid invite
 
 The invite link may be:
+
 - Expired (if time-limited)
 - Revoked (invite tag was rotated)
 - Single-use and already claimed
@@ -143,24 +149,26 @@ Generate a new invite from the Convos iOS app.
 ### Connection issues
 
 If you see XMTP connection errors:
+
 1. Check your network connectivity
 2. Try setting `env: "dev"` for testing
 3. Enable `debug: true` for detailed logs
 
 ## Capabilities
 
-| Feature | Supported |
-|---------|-----------|
-| Group conversations | Yes |
-| Direct messages | Yes |
-| Reactions | Yes |
-| Threads | No |
-| Media/attachments | Not yet |
-| E2E encryption | Yes (XMTP) |
+| Feature             | Supported  |
+| ------------------- | ---------- |
+| Group conversations | Yes        |
+| Direct messages     | Yes        |
+| Reactions           | Yes        |
+| Threads             | No         |
+| Media/attachments   | Not yet    |
+| E2E encryption      | Yes (XMTP) |
 
 ## Cross-Platform Deployment
 
 The Convos channel uses the convos-node-sdk which runs on any platform with Node.js support:
+
 - macOS
 - Linux (including containers)
 - Windows

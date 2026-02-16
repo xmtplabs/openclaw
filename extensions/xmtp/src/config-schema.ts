@@ -59,6 +59,9 @@ export const XMTPConfigSchema = z.object({
 
   /** Custom IPFS gateway URL (default: https://gateway.pinata.cloud/ipfs/). */
   ipfsGatewayUrl: z.string().url().optional(),
+
+  /** Owner wallet address (auto-paired, DM created on startup). */
+  ownerAddress: z.string().optional(),
 });
 
 export type XMTPConfigInput = z.infer<typeof XMTPConfigSchema>;

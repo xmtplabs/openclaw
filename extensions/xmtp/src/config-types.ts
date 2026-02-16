@@ -37,6 +37,8 @@ export type XMTPAccountConfig = {
   pinataSecretKey?: string;
   /** Custom IPFS gateway URL (default: https://gateway.pinata.cloud/ipfs/). */
   ipfsGatewayUrl?: string;
+  /** Ethereum address of the owner. Auto-allowed for DMs; a conversation is created on startup. */
+  ownerAddress?: string;
 };
 
 export type XMTPConfig = {

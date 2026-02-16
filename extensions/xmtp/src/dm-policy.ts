@@ -63,11 +63,20 @@ export async function evaluateDmAccess(params: {
     return { allowed: false, reason: "disabled" };
   }
 
+  const normalizedSender = normalizeXmtpAddress(sender);
+
+  // Owner is always allowed (unless DMs are fully disabled)
+  if (account.ownerAddress) {
+    const normalizedOwner = normalizeXmtpAddress(account.ownerAddress);
+    if (normalizedOwner && normalizedSender.toLowerCase() === normalizedOwner.toLowerCase()) {
+      return { allowed: true };
+    }
+  }
+
   // "pairing" or "allowlist" — check combined allow lists
   const configAllow = (account.config.allowFrom ?? []).map((v) => String(v).trim()).filter(Boolean);
   const storeAllow = await runtime.channel.pairing.readAllowFromStore(CHANNEL_ID);
   const combinedAllow = [...configAllow, ...storeAllow];
-  const normalizedSender = normalizeXmtpAddress(sender);
   const allowed =
     combinedAllow.includes("*") ||
     combinedAllow.some(
