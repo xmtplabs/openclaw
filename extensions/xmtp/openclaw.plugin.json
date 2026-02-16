@@ -29,7 +29,7 @@
       "publicAddress": { "type": "string" },
       "pinataApiKey": { "type": "string" },
       "pinataSecretKey": { "type": "string" },
-      "ipfsGatewayUrl": { "type": "string", "format": "uri" },
+      "ipfsGatewayUrl": { "type": "string" },
       "ownerAddress": { "type": "string" },
       "web3BioApiKey": { "type": "string" }
     }
