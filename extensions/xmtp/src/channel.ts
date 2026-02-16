@@ -31,6 +31,7 @@ import {
 } from "./dm-policy.js";
 import { startAccount, stopAccountHandler } from "./gateway-lifecycle.js";
 import { runInboundPipeline } from "./inbound-pipeline.js";
+import { isEnsName } from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
 import { getClientForAccount, xmtpOutbound } from "./outbound.js";
@@ -568,16 +569,18 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         if (!t) return false;
         // Ethereum address: exactly 42 hex chars (0x + 40)
         if (t.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(t)) return true;
+        if (isEnsName(t)) return true;
         return false;
       },
-      hint: "<address or conversation topic>",
+      hint: "<address, ENS name, or conversation topic>",
     },
   },
   actions: xmtpMessageActions,
   agentPrompt: {
     messageToolHints: ({ cfg, accountId }) => {
       const hints = [
-        "- XMTP targets are wallet addresses or conversation topics. Use `to=<address>` for `action=send`.",
+        "- XMTP targets are wallet addresses, ENS names, or conversation topics. Use `to=<address or name.eth>` for `action=send`.",
+        "- When ENS names are available (in SenderName, GroupMembers, or [ENS Context] blocks), always refer to users by their ENS name (e.g., nick.eth) rather than raw Ethereum addresses.",
         "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
       ];
       try {
