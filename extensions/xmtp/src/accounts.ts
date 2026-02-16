@@ -1,0 +1,139 @@
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId, type OpenClawConfig } from "openclaw/plugin-sdk";
+import type { XMTPConfig } from "./config-types.js";
+import { walletAddressFromPrivateKey } from "./lib/identity.js";
+
+export type CoreConfig = {
+  channels?: {
+    xmtp?: XMTPConfig;
+  };
+  [key: string]: unknown;
+};
+
+export type ResolvedXmtpAccount = {
+  accountId: string;
+  enabled: boolean;
+  name?: string;
+  configured: boolean;
+  walletKey: string;
+  dbEncryptionKey: string;
+  env: "production" | "dev";
+  debug: boolean;
+  /** Ethereum address; from config or derived from walletKey. */
+  publicAddress: string;
+  config: XMTPConfig;
+};
+
+export function getXmtpSection(cfg: CoreConfig): XMTPConfig | undefined {
+  return cfg.channels?.xmtp;
+}
+
+export function updateXmtpSection(
+  cfg: OpenClawConfig,
+  update: Partial<XMTPConfig>,
+): OpenClawConfig {
+  const prev = (cfg.channels as CoreConfig["channels"])?.xmtp;
+  return {
+    ...cfg,
+    channels: {
+      ...cfg.channels,
+      xmtp: { ...prev, ...update },
+    },
+  };
+}
+
+export function listXmtpAccountIds(cfg: CoreConfig): string[] {
+  const accounts = cfg.channels?.xmtp?.accounts;
+  if (accounts && typeof accounts === "object" && Object.keys(accounts).length > 0) {
+    return Object.keys(accounts);
+  }
+  return [DEFAULT_ACCOUNT_ID];
+}
+
+export function resolveDefaultXmtpAccountId(cfg: CoreConfig): string {
+  const ids = listXmtpAccountIds(cfg);
+  if (ids.includes(DEFAULT_ACCOUNT_ID)) {
+    return DEFAULT_ACCOUNT_ID;
+  }
+  return ids[0] ?? DEFAULT_ACCOUNT_ID;
+}
+
+function getAccountBase(cfg: CoreConfig, accountId: string): XMTPConfig {
+  const section = cfg.channels?.xmtp ?? {};
+  const accounts = section.accounts;
+  if (accounts && typeof accounts === "object" && accounts[accountId]) {
+    return { ...section, ...accounts[accountId] } as XMTPConfig;
+  }
+  return section;
+}
+
+/**
+ * Return config with publicAddress set for the given account (for backfill).
+ * Writes to top-level xmtp or to xmtp.accounts[accountId] depending on structure.
+ */
+export function setAccountPublicAddress(
+  cfg: OpenClawConfig,
+  accountId: string,
+  publicAddress: string,
+): OpenClawConfig {
+  const section = (cfg.channels as CoreConfig["channels"])?.xmtp ?? {};
+  const accounts = section.accounts;
+  if (accounts && typeof accounts === "object" && accounts[accountId]) {
+    return {
+      ...cfg,
+      channels: {
+        ...cfg.channels,
+        xmtp: {
+          ...section,
+          accounts: {
+            ...accounts,
+            [accountId]: { ...accounts[accountId], publicAddress },
+          },
+        },
+      },
+    };
+  }
+  return updateXmtpSection(cfg, { publicAddress });
+}
+
+export function resolveXmtpAccount(params: {
+  cfg: CoreConfig;
+  accountId?: string | null;
+}): ResolvedXmtpAccount {
+  const accountId = normalizeAccountId(params.accountId);
+  const base = getAccountBase(params.cfg, accountId);
+  const enabled = base.enabled !== false;
+  const configured = Boolean(base.walletKey && base.dbEncryptionKey);
+
+  const publicAddress =
+    base.publicAddress ?? (base.walletKey ? walletAddressFromPrivateKey(base.walletKey) : "");
+
+  return {
+    accountId,
+    enabled,
+    name: base.name?.trim() || undefined,
+    configured,
+    walletKey: base.walletKey ?? "",
+    dbEncryptionKey: base.dbEncryptionKey ?? "",
+    env: base.env === "dev" ? "dev" : "production",
+    debug: base.debug ?? false,
+    publicAddress,
+    config: base,
+  };
+}
+
+export function listEnabledXmtpAccounts(cfg: CoreConfig): ResolvedXmtpAccount[] {
+  return listXmtpAccountIds(cfg)
+    .map((accountId) => resolveXmtpAccount({ cfg, accountId }))
+    .filter((account) => account.enabled);
+}
+
+/**
+ * Throw if account is missing walletKey or dbEncryptionKey.
+ */
+export function ensureXmtpConfigured(account: ResolvedXmtpAccount): void {
+  if (!account.walletKey || !account.dbEncryptionKey) {
+    throw new Error(
+      "XMTP not configured: walletKey and dbEncryptionKey required. Run 'openclaw configure' to set up XMTP.",
+    );
+  }
+}
