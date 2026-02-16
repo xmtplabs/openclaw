@@ -189,3 +189,95 @@ describe("runInboundPipeline", () => {
     expect(typeof call.dispatcherOptions.onError).toBe("function");
   });
 });
+
+describe("ENS enrichment", () => {
+  it("uses senderName in envelope from field when provided", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: "convo-1",
+      content: "hello",
+      messageId: "msg-1",
+      isDirect: true,
+      runtime,
+      senderName: "nick.eth",
+      deliverReply: vi.fn(),
+    });
+
+    expect(mocks.formatAgentEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({ from: "nick.eth" }),
+    );
+  });
+
+  it("prepends ENS context to Body when provided", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: "convo-1",
+      content: "hello",
+      messageId: "msg-1",
+      isDirect: true,
+      runtime,
+      ensContext: "[ENS Context: nick.eth = 0x1234]",
+      deliverReply: vi.fn(),
+    });
+
+    // finalizeInboundContext receives Body with ensContext prepended
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Body: expect.stringContaining("[ENS Context: nick.eth = 0x1234]"),
+      }),
+    );
+  });
+
+  it("passes SenderName and GroupMembers to context", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: "convo-1",
+      content: "hello",
+      messageId: "msg-1",
+      isDirect: false,
+      runtime,
+      senderName: "nick.eth",
+      groupMembers: "nick.eth (0xd8da…6045), 0x1234…5678",
+      deliverReply: vi.fn(),
+    });
+
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        SenderName: "nick.eth",
+        GroupMembers: "nick.eth (0xd8da…6045), 0x1234…5678",
+      }),
+    );
+  });
+
+  it("does not prepend ENS context when not provided", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: "convo-1",
+      content: "hello",
+      messageId: "msg-1",
+      isDirect: true,
+      runtime,
+      deliverReply: vi.fn(),
+    });
+
+    // Body should NOT contain [ENS Context
+    const bodyArg = mocks.finalizeInboundContext.mock.calls[0][0].Body;
+    expect(bodyArg).not.toContain("[ENS Context");
+  });
+});

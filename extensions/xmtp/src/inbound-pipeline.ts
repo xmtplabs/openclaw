@@ -22,6 +22,10 @@ export async function runInboundPipeline(params: {
   media?: Array<{ path: string; contentType?: string }>;
   deliverReply: (payload: ReplyPayload) => Promise<void>;
   onDeliveryError?: (err: unknown, info: { kind: string }) => void;
+  // ENS enrichment
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }): Promise<void> {
   const {
     account,
@@ -58,14 +62,16 @@ export async function runInboundPipeline(params: {
   });
 
   const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(cfg);
-  const body = runtime.channel.reply.formatAgentEnvelope({
+  const rawBody = runtime.channel.reply.formatAgentEnvelope({
     channel: "XMTP",
-    from: sender.slice(0, 12),
+    from: params.senderName ?? sender.slice(0, 12),
     timestamp: Date.now(),
     previousTimestamp,
     envelope: envelopeOptions,
     body: content,
   });
+
+  const body = params.ensContext ? `${params.ensContext}\n${rawBody}` : rawBody;
 
   const mediaPayload = params.media?.length ? buildAgentMediaPayload(params.media) : {};
 
@@ -79,7 +85,8 @@ export async function runInboundPipeline(params: {
     AccountId: route.accountId,
     ChatType: isDirect ? "direct" : "group",
     ConversationLabel: conversationId.slice(0, 12),
-    SenderName: undefined,
+    SenderName: params.senderName,
+    GroupMembers: params.groupMembers,
     SenderId: sender,
     Provider: CHANNEL_ID,
     Surface: CHANNEL_ID,
