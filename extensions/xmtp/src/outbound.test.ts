@@ -96,7 +96,7 @@ describe("XMTP outbound adapter", () => {
       expect(result).toEqual(
         expect.objectContaining({
           channel: "xmtp",
-          messageId: expect.stringMatching(/^xmtp-\d+$/),
+          messageId: "msg-id",
         }),
       );
     });

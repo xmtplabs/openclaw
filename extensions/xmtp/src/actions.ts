@@ -18,8 +18,8 @@ export const xmtpMessageActions: ChannelMessageActionAdapter = {
     if (action === "send") {
       const to = readStringParam(params, "to", { required: true });
       const message = readStringParam(params, "message", { required: true, allowEmpty: true });
-      await agent.sendText(to, message ?? "");
-      return jsonResult({ ok: true, to, messageId: `xmtp-${Date.now()}` });
+      const messageId = await agent.sendText(to, message ?? "");
+      return jsonResult({ ok: true, to, messageId: messageId ?? `xmtp-${Date.now()}` });
     }
 
     throw new Error(`Action "${action}" is not supported for XMTP.`);

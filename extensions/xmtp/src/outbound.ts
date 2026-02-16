@@ -48,8 +48,8 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
     if (!conversation) {
       throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
     }
-    await conversation.sendText(text);
-    return { channel: CHANNEL_ID, messageId: `xmtp-${Date.now()}` };
+    const messageId = await conversation.sendText(text);
+    return { channel: CHANNEL_ID, messageId };
   },
 
   sendMedia: async ({ cfg, to, accountId, mediaUrl, text }) => {
@@ -60,7 +60,7 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
       throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
     }
     const url = mediaUrl ?? text ?? "";
-    await conversation.sendText(url);
-    return { channel: CHANNEL_ID, messageId: `xmtp-${Date.now()}` };
+    const messageId = await conversation.sendText(url);
+    return { channel: CHANNEL_ID, messageId };
   },
 };
