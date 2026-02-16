@@ -516,12 +516,15 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
   messaging: {
     normalizeTarget: normalizeXmtpMessagingTarget,
     targetResolver: {
-      looksLikeId: (raw) => {
+      looksLikeId: (raw, normalized) => {
         const t = raw.trim();
         if (!t) return false;
         // Ethereum address: exactly 42 hex chars (0x + 40)
         if (t.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(t)) return true;
         if (isEnsName(t)) return true;
+        // Conversation topic/ID: hex string (uses normalized to handle xmtp: prefix)
+        const n = (normalized ?? t).trim();
+        if (/^[0-9a-fA-F]{16,}$/.test(n)) return true;
         return false;
       },
       hint: "<address, ENS name, or conversation topic>",
