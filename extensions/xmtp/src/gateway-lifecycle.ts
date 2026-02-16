@@ -22,7 +22,16 @@ import {
   handleInboundMessage,
   handleInboundReaction,
 } from "./channel.js";
-import { createEnsResolver, setResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
+import {
+  createEnsResolver,
+  setResolverForAccount,
+  isEnsName,
+  getResolverForAccount,
+  extractEnsNames,
+  extractEthAddresses,
+  formatEnsContext,
+  formatGroupMembersWithEns,
+} from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { getClientForAccount, setClientForAccount } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
@@ -164,6 +173,63 @@ export async function backfillPublicAddress(params: {
   }
 }
 
+/** Resolve ENS context for an inbound message. */
+export async function resolveInboundEns(params: {
+  accountId: string;
+  sender: string;
+  content: string;
+  isDirect: boolean;
+  conversation?: {
+    members?: () => Promise<
+      Array<{ accountIdentifiers: Array<{ identifier: string; identifierKind: unknown }> }>
+    >;
+  };
+  log?: RuntimeLogger;
+}): Promise<{
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
+}> {
+  const resolver = getResolverForAccount(params.accountId);
+  if (!resolver) return {};
+
+  const result: { senderName?: string; groupMembers?: string; ensContext?: string } = {};
+
+  // Resolve sender address to ENS name
+  const senderName = await resolver.resolveAddress(params.sender);
+  if (senderName) result.senderName = senderName;
+
+  // Resolve ENS names and addresses mentioned in message content
+  const names = extractEnsNames(params.content);
+  const addresses = extractEthAddresses(params.content);
+  const identifiers = [...names, ...addresses];
+  if (identifiers.length > 0) {
+    const resolved = await resolver.resolveAll(identifiers);
+    const context = formatEnsContext(resolved);
+    if (context) result.ensContext = context;
+  }
+
+  // Resolve group members (only for group conversations)
+  if (!params.isDirect && params.conversation?.members) {
+    try {
+      const members = await params.conversation.members();
+      const memberAddresses = members
+        .flatMap((m) => m.accountIdentifiers)
+        .filter((id) => typeof id.identifier === "string" && /^0x/i.test(id.identifier))
+        .map((id) => id.identifier);
+      if (memberAddresses.length > 0) {
+        const resolved = await resolver.resolveAll(memberAddresses);
+        const formatted = formatGroupMembersWithEns(memberAddresses, resolved);
+        if (formatted) result.groupMembers = formatted;
+      }
+    } catch (err) {
+      params.log?.warn?.(`ENS group member resolution failed: ${String(err)}`);
+    }
+  }
+
+  return result;
+}
+
 /** Build the reaction event handler for inbound reactions. */
 export function buildReactionHandler(params: {
   account: ResolvedXmtpAccount;
@@ -197,6 +263,16 @@ export function buildReactionHandler(params: {
     const conversationId = msgCtx.conversation?.id as string;
     const isDirect = msgCtx.isDm();
 
+    const reactionContent = `[Reaction: ${reaction.content}]`;
+    const ens = await resolveInboundEns({
+      accountId: account.accountId,
+      sender,
+      content: reactionContent,
+      isDirect,
+      conversation: msgCtx.conversation as any,
+      log,
+    });
+
     handleInboundReaction({
       account,
       sender,
@@ -206,6 +282,7 @@ export function buildReactionHandler(params: {
       isDirect,
       runtime,
       log,
+      ...ens,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Reaction handling failed: ${String(err)}`);
     });
@@ -240,6 +317,16 @@ export function buildTextHandler(params: {
     const conversation = msgCtx.conversation;
     const conversationId = conversation?.id as string;
     const isDirect = msgCtx.isDm();
+
+    const ens = await resolveInboundEns({
+      accountId: account.accountId,
+      sender,
+      content,
+      isDirect,
+      conversation: conversation as any,
+      log,
+    });
+
     handleInboundMessage({
       account,
       sender,
@@ -249,6 +336,7 @@ export function buildTextHandler(params: {
       isDirect,
       runtime,
       log,
+      ...ens,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Message handling failed: ${String(err)}`);
     });
@@ -280,6 +368,15 @@ export function buildAttachmentHandler(params: {
     const conversationId = msgCtx.conversation?.id as string;
     const isDirect = msgCtx.isDm();
 
+    const ens = await resolveInboundEns({
+      accountId: account.accountId,
+      sender,
+      content: "",
+      isDirect,
+      conversation: msgCtx.conversation as any,
+      log,
+    });
+
     handleInboundAttachment({
       account,
       sender,
@@ -289,6 +386,7 @@ export function buildAttachmentHandler(params: {
       isDirect,
       runtime,
       log,
+      ...ens,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Attachment handling failed: ${String(err)}`);
     });
@@ -320,6 +418,15 @@ export function buildInlineAttachmentHandler(params: {
     const conversationId = msgCtx.conversation?.id as string;
     const isDirect = msgCtx.isDm();
 
+    const ens = await resolveInboundEns({
+      accountId: account.accountId,
+      sender,
+      content: "",
+      isDirect,
+      conversation: msgCtx.conversation as any,
+      log,
+    });
+
     handleInboundInlineAttachment({
       account,
       sender,
@@ -329,6 +436,7 @@ export function buildInlineAttachmentHandler(params: {
       isDirect,
       runtime,
       log,
+      ...ens,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Inline attachment handling failed: ${String(err)}`);
     });
@@ -360,6 +468,15 @@ export function buildMultiAttachmentHandler(params: {
     const conversationId = msgCtx.conversation?.id as string;
     const isDirect = msgCtx.isDm();
 
+    const ens = await resolveInboundEns({
+      accountId: account.accountId,
+      sender,
+      content: "",
+      isDirect,
+      conversation: msgCtx.conversation as any,
+      log,
+    });
+
     // RemoteAttachmentInfo is structurally compatible with RemoteAttachment
     const remoteAttachments = multiAttachment.attachments as unknown as RemoteAttachment[];
 
@@ -372,6 +489,7 @@ export function buildMultiAttachmentHandler(params: {
       isDirect,
       runtime,
       log,
+      ...ens,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Multi-attachment handling failed: ${String(err)}`);
     });

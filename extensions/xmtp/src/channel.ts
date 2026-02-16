@@ -71,6 +71,9 @@ export async function handleInboundMessage(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, content, messageId, isDirect, runtime, log } = params;
 
@@ -132,6 +135,9 @@ export async function handleInboundMessage(params: {
     isDirect,
     runtime,
     log,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -158,6 +164,9 @@ export async function handleInboundReaction(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, reaction, messageId, isDirect, runtime, log } = params;
 
@@ -210,6 +219,9 @@ export async function handleInboundReaction(params: {
     isDirect,
     runtime,
     log,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -236,6 +248,9 @@ export async function handleInboundAttachment(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, remoteAttachments, messageId, isDirect, runtime, log } =
     params;
@@ -311,6 +326,9 @@ export async function handleInboundAttachment(params: {
     runtime,
     log,
     media,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,
@@ -337,6 +355,9 @@ export async function handleInboundInlineAttachment(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  senderName?: string;
+  groupMembers?: string;
+  ensContext?: string;
 }) {
   const { account, sender, conversationId, attachments, messageId, isDirect, runtime, log } =
     params;
@@ -413,6 +434,9 @@ export async function handleInboundInlineAttachment(params: {
     runtime,
     log,
     media,
+    senderName: params.senderName,
+    groupMembers: params.groupMembers,
+    ensContext: params.ensContext,
     deliverReply: async (payload: ReplyPayload) => {
       await deliverXmtpReply({
         payload,

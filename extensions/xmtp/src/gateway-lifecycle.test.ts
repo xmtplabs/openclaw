@@ -11,6 +11,7 @@ import {
   buildMultiAttachmentHandler,
   buildReactionHandler,
   buildTextHandler,
+  resolveInboundEns,
   stopAgent,
 } from "./gateway-lifecycle.js";
 import {
@@ -750,5 +751,317 @@ describe("owner DM creation with ENS resolution", () => {
     expect(ensResolver.resolveEnsName).not.toHaveBeenCalled();
     expect(agent.createDmWithAddress).toHaveBeenCalledWith(regularAddr);
     expect(log.info).toHaveBeenCalledWith(expect.stringContaining("Owner DM ready"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveInboundEns
+// ---------------------------------------------------------------------------
+
+describe("resolveInboundEns", () => {
+  beforeEach(() => {
+    setResolverForAccount("default", null);
+  });
+
+  it("returns empty object when no resolver is registered", async () => {
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello",
+      isDirect: true,
+    });
+
+    expect(result).toEqual({});
+  });
+
+  it("resolves sender address to ENS name", async () => {
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => "vitalik.eth"),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello",
+      isDirect: true,
+    });
+
+    expect(result.senderName).toBe("vitalik.eth");
+    expect(mockResolver.resolveAddress).toHaveBeenCalledWith(TEST_SENDER_ADDRESS);
+  });
+
+  it("does not set senderName when resolveAddress returns null", async () => {
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello",
+      isDirect: true,
+    });
+
+    expect(result.senderName).toBeUndefined();
+  });
+
+  it("resolves ENS names mentioned in message content", async () => {
+    const resolved = new Map<string, string | null>([
+      ["nick.eth", "0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5"],
+    ]);
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => resolved),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "Send 1 ETH to nick.eth",
+      isDirect: true,
+    });
+
+    expect(result.ensContext).toContain("nick.eth");
+    expect(mockResolver.resolveAll).toHaveBeenCalledWith(["nick.eth"]);
+  });
+
+  it("resolves Ethereum addresses mentioned in message content", async () => {
+    const addr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const resolved = new Map<string, string | null>([[addr, "vitalik.eth"]]);
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => resolved),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: `Check ${addr}`,
+      isDirect: true,
+    });
+
+    expect(result.ensContext).toContain("vitalik.eth");
+    expect(result.ensContext).toContain(addr);
+  });
+
+  it("does not set ensContext when no identifiers found in content", async () => {
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "just a regular message",
+      isDirect: true,
+    });
+
+    expect(result.ensContext).toBeUndefined();
+    // resolveAll should not be called if no identifiers extracted
+    expect(mockResolver.resolveAll).not.toHaveBeenCalled();
+  });
+
+  it("resolves group members for non-DM conversations", async () => {
+    const memberAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const resolved = new Map<string, string | null>([[memberAddr, "vitalik.eth"]]);
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => resolved),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const conversation = {
+      members: vi.fn(async () => [
+        {
+          accountIdentifiers: [{ identifier: memberAddr, identifierKind: "evm" }],
+        },
+      ]),
+    };
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello group",
+      isDirect: false,
+      conversation,
+    });
+
+    expect(result.groupMembers).toContain("vitalik.eth");
+    expect(conversation.members).toHaveBeenCalled();
+  });
+
+  it("skips group member resolution for DM conversations", async () => {
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const conversation = {
+      members: vi.fn(async () => []),
+    };
+
+    await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello",
+      isDirect: true,
+      conversation,
+    });
+
+    expect(conversation.members).not.toHaveBeenCalled();
+  });
+
+  it("handles group member resolution failure gracefully", async () => {
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => null),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const conversation = {
+      members: vi.fn(async () => {
+        throw new Error("members fetch failed");
+      }),
+    };
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const result = await resolveInboundEns({
+      accountId: "default",
+      sender: TEST_SENDER_ADDRESS,
+      content: "hello group",
+      isDirect: false,
+      conversation,
+      log: log as any,
+    });
+
+    // Should not throw, and groupMembers should be undefined
+    expect(result.groupMembers).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("ENS group member resolution failed"),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildTextHandler ENS integration
+// ---------------------------------------------------------------------------
+
+describe("buildTextHandler ENS integration", () => {
+  beforeEach(() => {
+    setClientForAccount("default", null);
+    setResolverForAccount("default", null);
+    setXmtpRuntime({
+      channel: {
+        text: { chunkMarkdownText: (text: string) => [text] },
+      },
+    } as unknown as PluginRuntime);
+  });
+
+  it("passes ENS context to handleInboundMessage when resolver is available", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => "sender.eth"),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const handler = buildTextHandler({ account, runtime });
+    await handler({
+      isDenied: false,
+      message: { content: "hello", id: "msg-1" },
+      conversation: { id: "convo-1" },
+      isDm: () => true,
+      getSenderAddress: async () => TEST_SENDER_ADDRESS,
+    } as any);
+
+    // The resolver should have been called
+    expect(mockResolver.resolveAddress).toHaveBeenCalledWith(TEST_SENDER_ADDRESS);
+
+    // The pipeline should have been invoked (finalizeInboundContext gets called)
+    expect(mocks.finalizeInboundContext).toHaveBeenCalled();
+    const ctxArg = mocks.finalizeInboundContext.mock.calls[0][0];
+    expect(ctxArg.SenderName).toBe("sender.eth");
+  });
+
+  it("works without resolver (no ENS context passed)", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+    // No resolver set
+
+    const handler = buildTextHandler({ account, runtime });
+    await handler({
+      isDenied: false,
+      message: { content: "hello", id: "msg-1" },
+      conversation: { id: "convo-1" },
+      isDm: () => true,
+      getSenderAddress: async () => TEST_SENDER_ADDRESS,
+    } as any);
+
+    // Pipeline should still be called
+    expect(mocks.finalizeInboundContext).toHaveBeenCalled();
+    const ctxArg = mocks.finalizeInboundContext.mock.calls[0][0];
+    expect(ctxArg.SenderName).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildReactionHandler ENS integration
+// ---------------------------------------------------------------------------
+
+describe("buildReactionHandler ENS integration", () => {
+  beforeEach(() => {
+    setClientForAccount("default", null);
+    setResolverForAccount("default", null);
+    setXmtpRuntime({
+      channel: {
+        text: { chunkMarkdownText: (text: string) => [text] },
+      },
+    } as unknown as PluginRuntime);
+  });
+
+  it("passes ENS context to handleInboundReaction when resolver is available", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    const mockResolver = {
+      resolveEnsName: vi.fn(async () => null),
+      resolveAddress: vi.fn(async () => "reactor.eth"),
+      resolveAll: vi.fn(async () => new Map()),
+    };
+    setResolverForAccount("default", mockResolver);
+
+    const handler = buildReactionHandler({ account, runtime });
+    await handler({
+      isDenied: false,
+      message: { content: { content: "\u2764\ufe0f", action: 1, reference: "msg-1" }, id: "r-1" },
+      conversation: { id: "convo-1" },
+      isDm: () => true,
+      getSenderAddress: async () => TEST_SENDER_ADDRESS,
+    } as any);
+
+    expect(mockResolver.resolveAddress).toHaveBeenCalledWith(TEST_SENDER_ADDRESS);
+    expect(mocks.finalizeInboundContext).toHaveBeenCalled();
+    const ctxArg = mocks.finalizeInboundContext.mock.calls[0][0];
+    expect(ctxArg.SenderName).toBe("reactor.eth");
   });
 });
