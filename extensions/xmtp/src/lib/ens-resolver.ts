@@ -187,3 +187,44 @@ export function setResolverForAccount(accountId: string, resolver: EnsResolver |
     resolvers.delete(accountId);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format resolved ENS context as a bracketed context block for the agent.
+ * Returns empty string if nothing resolved successfully.
+ */
+export function formatEnsContext(resolved: Map<string, string | null>): string {
+  const entries: string[] = [];
+  for (const [id, value] of resolved) {
+    if (!value) continue;
+    if (isEnsName(id)) {
+      entries.push(`${id} = ${value}`);
+    } else if (isEthAddress(id)) {
+      entries.push(`${value} = ${id}`);
+    }
+  }
+  if (entries.length === 0) return "";
+  return `[ENS Context: ${entries.join(", ")}]`;
+}
+
+/**
+ * Format group member addresses with resolved ENS names.
+ * Members with names: "nick.eth (0xd8da…6045)"
+ * Members without: "0xd8da6bf269…96045"
+ */
+export function formatGroupMembersWithEns(
+  addresses: string[],
+  resolved: Map<string, string | null>,
+): string {
+  if (addresses.length === 0) return "";
+  return addresses
+    .map((addr) => {
+      const name = resolved.get(addr);
+      if (name) return `${name} (${addr.slice(0, 6)}…${addr.slice(-4)})`;
+      return addr;
+    })
+    .join(", ");
+}

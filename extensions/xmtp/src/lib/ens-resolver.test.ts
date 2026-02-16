@@ -390,3 +390,51 @@ describe("resolver instance management", () => {
     expect(getResolverForAccount("test")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// formatting helpers
+// ---------------------------------------------------------------------------
+
+import { formatEnsContext, formatGroupMembersWithEns } from "./ens-resolver.js";
+
+describe("formatEnsContext", () => {
+  it("formats resolved names and addresses", () => {
+    const resolved = new Map<string, string | null>([
+      ["vitalik.eth", "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"],
+      ["0x1234567890abcdef1234567890abcdef12345678", "nick.eth"],
+    ]);
+    const result = formatEnsContext(resolved);
+    expect(result).toContain("vitalik.eth = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
+    expect(result).toContain("nick.eth = 0x1234567890abcdef1234567890abcdef12345678");
+    expect(result).toMatch(/^\[ENS Context: .+\]$/);
+  });
+
+  it("returns empty string when nothing resolved", () => {
+    const resolved = new Map<string, string | null>([["unknown.eth", null]]);
+    expect(formatEnsContext(resolved)).toBe("");
+  });
+
+  it("returns empty string for empty map", () => {
+    expect(formatEnsContext(new Map())).toBe("");
+  });
+});
+
+describe("formatGroupMembersWithEns", () => {
+  it("formats members with resolved ENS names", () => {
+    const members = [
+      "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+      "0x1234567890abcdef1234567890abcdef12345678",
+    ];
+    const resolved = new Map<string, string | null>([
+      ["0xd8da6bf26964af9d7eed9e03e53415d37aa96045", "vitalik.eth"],
+      ["0x1234567890abcdef1234567890abcdef12345678", null],
+    ]);
+    const result = formatGroupMembersWithEns(members, resolved);
+    expect(result).toContain("vitalik.eth (0xd8da…6045)");
+    expect(result).toContain("0x1234567890abcdef1234567890abcdef12345678");
+  });
+
+  it("returns empty string for empty members", () => {
+    expect(formatGroupMembersWithEns([], new Map())).toBe("");
+  });
+});
