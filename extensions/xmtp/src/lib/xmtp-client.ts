@@ -6,6 +6,7 @@
  */
 
 import { Agent, createSigner, createUser, type HexString } from "@xmtp/agent-sdk";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ResolvedXmtpAccount } from "../accounts.js";
 import { getXmtpRuntime } from "../runtime.js";
@@ -38,6 +39,7 @@ export async function createAgentFromAccount(
   stateDir: string,
 ): Promise<Agent> {
   const dbPath = path.join(stateDir, "xmtp", account.accountId);
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const user = createUser(ensureHexPrefix(account.walletKey));
   const signer = createSigner(user);
   return Agent.create(signer, {
@@ -56,6 +58,7 @@ export async function runTemporaryXmtpClient(params: {
   const accountId = params.accountId ?? "default";
   const stateDir = getXmtpRuntime().state.resolveStateDir();
   const dbPath = path.join(stateDir, "xmtp", accountId);
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const user = createUser(ensureHexPrefix(params.walletKey));
   const signer = createSigner(user);
   const agent = await Agent.create(signer, {

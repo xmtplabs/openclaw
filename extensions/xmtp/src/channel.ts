@@ -487,7 +487,9 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
           "ownerAddress",
         ],
       }),
-    isConfigured: (account) => account.configured,
+    // Always return true for isConfigued so that the auto-provisioning has a chance to run
+    // Otherwise there is a chicken-and-egg problem that prevents the account from being configured.
+    isConfigured: (_account) => true,
     describeAccount: (account) => ({
       accountId: account.accountId,
       name: account.name,
