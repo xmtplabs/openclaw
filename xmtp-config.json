@@ -23,7 +23,7 @@ cat > /data/openclaw.json << 'EOF'
   "channels": {
     "xmtp": {
       "enabled": true,
-      "ownerAddress": "0xa2b9ab5cd400f1f6ea5f54f0f68c75419c89abcb", // Add your address here?
+      "ownerAddress": "0xa2b9ab5cd400f1f6ea5f54f0f68c75419c89abcb",
       "env": "dev",
       "dmPolicy": "pairing"
     }
@@ -34,11 +34,7 @@ cat > /data/openclaw.json << 'EOF'
     "trustedProxies": ["172.16.0.0/12"],
     "auth": {
       "mode": "token",
-      "token": "42c36667c7fb7d0a6ba098880a89111edb699c15ba1bbbd316a7fd8be230353b",
     }
-  },
-  "meta": {
-    "lastTouchedVersion": "2026.1.29"
   },
   "plugins": {
     "entries": {

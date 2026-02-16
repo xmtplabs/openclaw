@@ -28,8 +28,8 @@ min_machines_running = 1
 processes = ["app"]
 
 [[vm]]
-size = "shared-cpu-2x"
-memory = "2048mb"
+size = "shared-cpu-4x"
+memory = "4gb"
 
 [mounts]
 source = "xmtp_claw_data"
