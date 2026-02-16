@@ -1,8 +1,7 @@
 import type { ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { readJsonBodyWithLimit } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema, readJsonBodyWithLimit } from "openclaw/plugin-sdk";
 import { xmtpPlugin } from "./src/channel.js";
-import { XMTPConfigSchema } from "./src/config-schema.js";
 import { setXmtpRuntime } from "./src/runtime.js";
 import {
   handleSetup,
@@ -22,13 +21,7 @@ const plugin = {
   id: "xmtp",
   name: "XMTP",
   description: "XMTP decentralized messaging channel",
-  configSchema: {
-    safeParse: (value: unknown) => XMTPConfigSchema.safeParse(value),
-    jsonSchema: XMTPConfigSchema.toJSONSchema({
-      target: "draft-07",
-      unrepresentable: "any",
-    }) as Record<string, unknown>,
-  },
+  configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
     setXmtpRuntime(api.runtime);
     api.registerChannel({ plugin: xmtpPlugin });
