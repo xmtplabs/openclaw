@@ -462,21 +462,22 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       ensureXmtpConfigured(account);
       const runtime = getXmtpRuntime();
 
-      if (!account.config.publicAddress) {
+      setStatus({ accountId: account.accountId });
+
+      const stateDir = runtime.state.resolveStateDir();
+      const agent = await createAgentFromAccount(account, stateDir);
+
+      // Use agent.address for backfill if config doesn't have it
+      if (!account.config.publicAddress && agent.address) {
         const cfg = runtime.config.loadConfig();
-        const next = setAccountPublicAddress(cfg, account.accountId, account.publicAddress);
+        const next = setAccountPublicAddress(cfg, account.accountId, agent.address);
         await runtime.config.writeConfigFile(next);
         log?.info(`[${account.accountId}] backfilled publicAddress to config`);
       }
 
-      setStatus({ accountId: account.accountId });
-
       log?.info(
-        `[${account.accountId}] starting XMTP provider (env: ${account.env}, agent: ${account.publicAddress})`,
+        `[${account.accountId}] starting XMTP provider (env: ${account.env}, agent: ${agent.address ?? account.publicAddress})`,
       );
-
-      const stateDir = runtime.state.resolveStateDir();
-      const agent = await createAgentFromAccount(account, stateDir);
 
       const handleTextLike = async (msgCtx: MessageContext<string>) => {
         log?.info(
