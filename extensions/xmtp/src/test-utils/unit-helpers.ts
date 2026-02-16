@@ -2,7 +2,7 @@
  * Shared helpers for XMTP unit tests (mock-based, no network).
  */
 
-import type { PluginRuntime } from "openclaw/plugin-sdk";
+import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import { vi } from "vitest";
 import type { ResolvedXmtpAccount, CoreConfig } from "../accounts.js";
 import type { DmPolicy, GroupPolicy, XMTPAccountConfig } from "../config-types.js";
@@ -200,7 +200,13 @@ export function createMockRuntime(overrides?: {
  * conversation for that specific ID (useful for outbound routing tests).
  * When omitted, every lookup succeeds (useful for DM-policy / pairing tests).
  */
-export function makeFakeAgent(opts?: { conversationId?: string }) {
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+export function makeFakeAgent(opts?: { conversationId?: string }): {
+  agent: Record<string, unknown>;
+  sentMessages: string[];
+  sentToAddress: Array<{ to: string; text: string }>;
+  fakeConversation: Record<string, unknown>;
+} {
   const sentMessages: string[] = [];
   const sentToAddress: Array<{ to: string; text: string }> = [];
 
@@ -251,7 +257,7 @@ export async function callInbound(params: {
   content?: string;
   messageId?: string;
   runtime: PluginRuntime;
-  log?: { info: (msg: string) => void; error: (msg: string) => void };
+  log?: RuntimeLogger;
 }): Promise<void> {
   const {
     account,
@@ -264,7 +270,7 @@ export async function callInbound(params: {
   const conversationId = params.conversationId ?? sender;
   // Default: if conversationId was not explicitly set, treat as DM
   const isDirect = params.isDirect ?? params.conversationId === undefined;
-  return handleInboundMessage(
+  return handleInboundMessage({
     account,
     sender,
     conversationId,
@@ -273,5 +279,5 @@ export async function callInbound(params: {
     isDirect,
     runtime,
     log,
-  );
+  });
 }

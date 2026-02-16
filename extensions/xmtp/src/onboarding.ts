@@ -11,7 +11,6 @@ import {
   updateXmtpSection,
   type CoreConfig,
 } from "./accounts.js";
-import { writeXmtpVarsToEnv } from "./lib/env-file.js";
 import {
   generateEncryptionKeyHex,
   generatePrivateKey,
@@ -150,19 +149,17 @@ export const xmtpOnboardingAdapter: ChannelOnboardingAdapter = {
       publicAddress,
     });
 
-    writeXmtpVarsToEnv({ walletKey, dbEncryptionKey, env });
-
     await prompter.note("Initializing XMTP client…", "XMTP");
 
     try {
       await runTemporaryXmtpClient({ walletKey, dbEncryptionKey, env });
       await prompter.note(
-        `XMTP configured. Keys saved to config and .env.\n\nPublic address: ${publicAddress}\n\nSave this address; it identifies your XMTP identity.`,
+        `XMTP configured. Keys saved to config.\n\nPublic address: ${publicAddress}\n\nSave this address; it identifies your XMTP identity.`,
         "XMTP",
       );
     } catch (err) {
       await prompter.note(
-        `Client initialization failed: ${err instanceof Error ? err.message : String(err)}\n\nKeys were saved to config and .env. You can retry or start the gateway later.`,
+        `Client initialization failed: ${err instanceof Error ? err.message : String(err)}\n\nKeys were saved to config. You can retry or start the gateway later.`,
         "XMTP",
       );
     }

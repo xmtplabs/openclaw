@@ -1,8 +1,11 @@
 import type { Agent } from "@xmtp/agent-sdk";
 import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
 import { createRemoteAttachment, encryptAttachment } from "@xmtp/agent-sdk";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, type CoreConfig } from "./accounts.js";
 import { getXmtpRuntime } from "./runtime.js";
+
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
 
 const CHANNEL_ID = "xmtp";
 const agents = new Map<string, Agent>();
@@ -56,7 +59,7 @@ async function uploadToPinata(
   gatewayUrl = "https://gateway.pinata.cloud/ipfs/",
 ): Promise<string> {
   const formData = new FormData();
-  formData.append("file", new Blob([data]), filename);
+  formData.append("file", new Blob([data as BlobPart]), filename);
   const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
     method: "POST",
     headers: {
@@ -72,23 +75,47 @@ async function uploadToPinata(
   return `${gatewayUrl.replace(/\/+$/, "")}/${result.IpfsHash}`;
 }
 
-/** Download media from URL. Returns content, MIME type, and filename. */
+/** Download media from URL with SSRF guard and size limit. */
 async function downloadMedia(
   url: string,
 ): Promise<{ content: Uint8Array; mimeType: string; filename: string } | null> {
+  let release: (() => Promise<void>) | undefined;
   try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
+    const result = await fetchWithSsrFGuard({
+      url,
+      timeoutMs: 30_000,
+      auditContext: "xmtp-media-download",
+    });
+    release = result.release;
+    const { response } = result;
+    if (!response.ok) {
+      await release();
+      return null;
+    }
+
+    const contentLength = Number(response.headers.get("content-length") || "0");
+    if (contentLength > MAX_MEDIA_BYTES) {
+      await release();
+      return null;
+    }
+
     const mimeType = (response.headers.get("content-type") ?? "application/octet-stream")
       .split(";")[0]
       .trim();
     const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_MEDIA_BYTES) {
+      await release();
+      return null;
+    }
+
+    await release();
     return {
       content: new Uint8Array(buffer),
       mimeType,
       filename: filenameFromUrl(url),
     };
   } catch {
+    await release?.();
     return null;
   }
 }

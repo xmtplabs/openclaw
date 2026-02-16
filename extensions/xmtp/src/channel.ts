@@ -1,9 +1,8 @@
 /**
  * XMTP channel adapter for OpenClaw gateway.
- * Uses @xmtp/agent-sdk to listen for messages and forward them via the reply pipeline.
+ * Composes dm-policy, inbound-pipeline, and gateway-lifecycle modules.
  */
 
-import type { MessageContext } from "@xmtp/agent-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
@@ -14,19 +13,25 @@ import {
   type RuntimeLogger,
 } from "openclaw/plugin-sdk";
 import {
-  ensureXmtpConfigured,
   listXmtpAccountIds,
   resolveDefaultXmtpAccountId,
   resolveXmtpAccount,
-  setAccountPublicAddress,
   type CoreConfig,
   type ResolvedXmtpAccount,
 } from "./accounts.js";
 import { xmtpMessageActions } from "./actions.js";
 import { xmtpChannelConfigSchema } from "./config-schema.js";
+import {
+  evaluateDmAccess,
+  isGroupAllowed,
+  normalizeXmtpAddress,
+  sendPairingReply,
+} from "./dm-policy.js";
+import { startAccount, stopAccountHandler } from "./gateway-lifecycle.js";
+import { runInboundPipeline } from "./inbound-pipeline.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
-import { getClientForAccount, setClientForAccount, xmtpOutbound } from "./outbound.js";
+import { getClientForAccount, xmtpOutbound } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
 
 const CHANNEL_ID = "xmtp";
@@ -43,51 +48,37 @@ const meta = {
   aliases: [CHANNEL_ID],
 };
 
-function normalizeXmtpAddress(raw: string): string {
-  let s = raw.trim();
-  if (s.toLowerCase().startsWith("xmtp:")) {
-    s = s.slice("xmtp:".length).trim();
-  }
-  return s;
-}
-
 function normalizeXmtpMessagingTarget(raw: string): string | undefined {
   const s = normalizeXmtpAddress(raw);
   return s || undefined;
 }
 
-export function isGroupAllowed(params: {
-  account: ResolvedXmtpAccount;
-  conversationId: string;
-}): boolean {
-  const { account, conversationId } = params;
-  const policy = account.config.groupPolicy ?? "open";
-  if (policy === "open") {
-    return true;
-  }
-  if (policy === "disabled") {
-    return false;
-  }
-  const groups = account.config.groups ?? [];
-  return groups.includes("*") || groups.includes(conversationId);
-}
+// Re-export for existing test imports
+export { isGroupAllowed } from "./dm-policy.js";
 
-export async function handleInboundMessage(
-  account: ResolvedXmtpAccount,
-  sender: string,
-  conversationId: string,
-  content: string,
-  messageId: string | undefined,
-  isDirect: boolean,
-  runtime: PluginRuntime,
-  log?: RuntimeLogger,
-) {
+// ---------------------------------------------------------------------------
+// Inbound message handler (thin orchestrator)
+// ---------------------------------------------------------------------------
+
+export async function handleInboundMessage(params: {
+  account: ResolvedXmtpAccount;
+  sender: string;
+  conversationId: string;
+  content: string;
+  messageId: string | undefined;
+  isDirect: boolean;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}) {
+  const { account, sender, conversationId, content, messageId, isDirect, runtime, log } = params;
+
   if (account.debug) {
     log?.info(
       `[${account.accountId}] Inbound from ${sender.slice(0, 12)}: ${content.slice(0, 50)}`,
     );
   }
 
+  // Group access control
   if (!isDirect && !isGroupAllowed({ account, conversationId })) {
     if (account.debug) {
       log?.info(
@@ -97,161 +88,64 @@ export async function handleInboundMessage(
     return;
   }
 
-  // DM access control (secure defaults): "pairing" (default) / "allowlist" / "open" / "disabled"
+  // DM access control
   if (isDirect) {
-    const dmPolicy = account.config.dmPolicy ?? "pairing";
-
-    if (dmPolicy === "disabled") {
-      if (account.debug) {
+    const decision = await evaluateDmAccess({ account, sender, runtime });
+    if (!decision.allowed) {
+      if (decision.reason === "pairing" && decision.created && decision.code) {
+        await sendPairingReply({
+          account,
+          sender,
+          conversationId,
+          code: decision.code,
+          runtime,
+          log,
+        });
+      } else if (decision.reason === "blocked" && account.debug) {
+        log?.info(
+          `[${account.accountId}] Blocked DM from ${sender.slice(0, 12)} (dmPolicy=${decision.dmPolicy})`,
+        );
+      } else if (decision.reason === "disabled" && account.debug) {
         log?.info(
           `[${account.accountId}] Dropped DM from ${sender.slice(0, 12)} (dmPolicy=disabled)`,
         );
       }
       return;
     }
-
-    if (dmPolicy !== "open") {
-      const configAllow = (account.config.allowFrom ?? [])
-        .map((v) => String(v).trim())
-        .filter(Boolean);
-      const storeAllow = await runtime.channel.pairing.readAllowFromStore(CHANNEL_ID);
-      const combinedAllow = [...configAllow, ...storeAllow];
-      const normalizedSender = normalizeXmtpAddress(sender);
-      const allowed =
-        combinedAllow.includes("*") ||
-        combinedAllow.some(
-          (entry) => normalizeXmtpAddress(entry).toLowerCase() === normalizedSender.toLowerCase(),
-        );
-
-      if (!allowed) {
-        if (dmPolicy === "pairing") {
-          try {
-            const { code, created } = await runtime.channel.pairing.upsertPairingRequest({
-              channel: CHANNEL_ID,
-              id: sender,
-              meta: { address: sender },
-            });
-            if (created && code) {
-              const reply = runtime.channel.pairing.buildPairingReply({
-                channel: CHANNEL_ID,
-                idLine: `Your address: ${sender}`,
-                code,
-              });
-              const agent = getClientForAccount(account.accountId);
-              if (agent) {
-                const conversation =
-                  await agent.client.conversations.getConversationById(conversationId);
-                if (conversation) {
-                  await conversation.sendText(reply);
-                }
-              }
-            }
-          } catch (err) {
-            log?.error(
-              `[${account.accountId}] Pairing reply failed for ${sender.slice(0, 12)}: ${String(err)}`,
-            );
-          }
-        } else if (account.debug) {
-          log?.info(
-            `[${account.accountId}] Blocked DM from ${sender.slice(0, 12)} (dmPolicy=${dmPolicy})`,
-          );
-        }
-        return;
-      }
-    }
   }
 
-  const cfg = runtime.config.loadConfig();
-  const rawBody = content;
-
-  const route = runtime.channel.routing.resolveAgentRoute({
-    cfg,
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-    peer: {
-      kind: isDirect ? "direct" : "group",
-      id: conversationId,
-    },
-  });
-
-  const storePath = runtime.channel.session.resolveStorePath(cfg.session?.store, {
-    agentId: route.agentId,
-  });
-
-  const previousTimestamp = runtime.channel.session.readSessionUpdatedAt({
-    storePath,
-    sessionKey: route.sessionKey,
-  });
-
-  const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(cfg);
-  const body = runtime.channel.reply.formatAgentEnvelope({
-    channel: "XMTP",
-    from: sender.slice(0, 12),
-    timestamp: Date.now(),
-    previousTimestamp,
-    envelope: envelopeOptions,
-    body: rawBody,
-  });
-
-  const ctxPayload = runtime.channel.reply.finalizeInboundContext({
-    Body: body,
-    RawBody: rawBody,
-    CommandBody: rawBody,
-    From: `xmtp:${sender}`,
-    To: `xmtp:${conversationId}`,
-    SessionKey: route.sessionKey,
-    AccountId: route.accountId,
-    ChatType: isDirect ? "direct" : "group",
-    ConversationLabel: conversationId.slice(0, 12),
-    SenderName: undefined,
-    SenderId: sender,
-    Provider: CHANNEL_ID,
-    Surface: CHANNEL_ID,
-    MessageSid: messageId,
-    OriginatingChannel: CHANNEL_ID,
-    OriginatingTo: `xmtp:${conversationId}`,
-  });
-
-  await runtime.channel.session.recordInboundSession({
-    storePath,
-    sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
-    ctx: ctxPayload,
-    onRecordError: (err) => {
-      log?.error(`[${account.accountId}] Failed updating session meta: ${String(err)}`);
-    },
-  });
-
+  // Pipeline: route -> envelope -> session -> dispatch
   const tableMode = runtime.channel.text.resolveMarkdownTableMode({
-    cfg,
+    cfg: runtime.config.loadConfig(),
     channel: CHANNEL_ID,
     accountId: account.accountId,
   });
 
-  await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-    ctx: ctxPayload,
-    cfg,
-    dispatcherOptions: {
-      deliver: async (payload: ReplyPayload) => {
-        await deliverXmtpReply({
-          payload,
-          conversationId,
-          accountId: account.accountId,
-          runtime,
-          log,
-          tableMode,
-        });
-      },
-      onError: (err, info) => {
-        const msg = String(err);
-        if (msg.includes("XMTP agent not available")) {
-          log?.info(`[${account.accountId}] XMTP ${info.kind} reply skipped (agent unavailable).`);
-          return;
-        }
-        log?.error(`[${account.accountId}] XMTP ${info.kind} reply failed: ${msg}`);
-      },
+  await runInboundPipeline({
+    account,
+    sender,
+    conversationId,
+    content,
+    messageId,
+    isDirect,
+    runtime,
+    log,
+    deliverReply: async (payload: ReplyPayload) => {
+      await deliverXmtpReply({
+        payload,
+        conversationId,
+        accountId: account.accountId,
+        runtime,
+        log,
+        tableMode,
+      });
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Reply delivery
+// ---------------------------------------------------------------------------
 
 async function deliverXmtpReply(params: {
   payload: ReplyPayload;
@@ -291,17 +185,9 @@ async function deliverXmtpReply(params: {
   }
 }
 
-async function stopAgent(accountId: string, log?: RuntimeLogger): Promise<void> {
-  const agent = getClientForAccount(accountId);
-  if (agent) {
-    try {
-      await agent.stop();
-    } catch (err) {
-      log?.error(`[${accountId}] Error stopping agent: ${String(err)}`);
-    }
-    setClientForAccount(accountId, null);
-  }
-}
+// ---------------------------------------------------------------------------
+// Plugin definition
+// ---------------------------------------------------------------------------
 
 export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
   id: CHANNEL_ID,
@@ -363,10 +249,12 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
     targetResolver: {
       looksLikeId: (raw) => {
         const t = raw.trim();
-        if (!t) {
-          return false;
-        }
-        return (t.length >= 20 && /^0x[0-9a-fA-F]+$/.test(t)) || t.includes("/");
+        if (!t) return false;
+        // Ethereum address: exactly 42 hex chars (0x + 40)
+        if (t.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(t)) return true;
+        // XMTP conversation topic: at least 20 chars containing a /
+        if (t.length >= 20 && t.includes("/")) return true;
+        return false;
       },
       hint: "<address or conversation topic>",
     },
@@ -394,9 +282,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
     collectStatusIssues: (accounts) =>
       accounts.flatMap((account) => {
         const lastError = typeof account.lastError === "string" ? account.lastError.trim() : "";
-        if (!lastError) {
-          return [];
-        }
+        if (!lastError) return [];
         return [
           {
             channel: CHANNEL_ID,
@@ -428,13 +314,16 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         const stateDir = runtime.state.resolveStateDir();
         const agent = await createAgentFromAccount(account, stateDir);
         const limit = timeoutMs ?? 10000;
-        await Promise.race([
-          agent.start(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Probe timed out")), limit),
-          ),
-        ]);
-        await agent.stop();
+        try {
+          await Promise.race([
+            agent.start(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Probe timed out")), limit),
+            ),
+          ]);
+        } finally {
+          await agent.stop().catch(() => {});
+        }
         return { ok: true };
       } catch (err) {
         return {
@@ -457,85 +346,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
     }),
   },
   gateway: {
-    startAccount: async (ctx) => {
-      const { account, abortSignal, setStatus, log } = ctx;
-      ensureXmtpConfigured(account);
-      const runtime = getXmtpRuntime();
-
-      setStatus({ accountId: account.accountId });
-
-      const stateDir = runtime.state.resolveStateDir();
-      const agent = await createAgentFromAccount(account, stateDir);
-
-      agent.errors.use(async ({ error }) => {
-        log?.error(`[${account.accountId}] Agent error: ${String(error)}`);
-      });
-
-      // Use agent.address for backfill if config doesn't have it
-      if (!account.config.publicAddress && agent.address) {
-        const cfg = runtime.config.loadConfig();
-        const next = setAccountPublicAddress(cfg, account.accountId, agent.address);
-        await runtime.config.writeConfigFile(next);
-        log?.info(`[${account.accountId}] backfilled publicAddress to config`);
-      }
-
-      log?.info(
-        `[${account.accountId}] starting XMTP provider (env: ${account.env}, agent: ${agent.address ?? account.publicAddress})`,
-      );
-
-      const handleTextLike = async (msgCtx: MessageContext<string>) => {
-        // Skip messages from denied contacts
-        if (msgCtx.isDenied) {
-          if (account.debug) {
-            log?.info(`[${account.accountId}] Skipped message from denied contact`);
-          }
-          return;
-        }
-
-        log?.info(
-          `[${account.accountId}] text event: ${JSON.stringify({ content: msgCtx.message?.content?.slice(0, 50), id: msgCtx.message?.id })}`,
-        );
-        const sender = await msgCtx.getSenderAddress();
-        const conversation = msgCtx.conversation;
-        const conversationId = conversation?.id as string;
-        const isDirect = msgCtx.isDm();
-        handleInboundMessage(
-          account,
-          sender,
-          conversationId,
-          msgCtx.message.content,
-          msgCtx.message.id,
-          isDirect,
-          runtime,
-          log,
-        ).catch((err) => {
-          log?.error(`[${account.accountId}] Message handling failed: ${String(err)}`);
-        });
-      };
-
-      agent.on("text", handleTextLike);
-      agent.on("markdown", handleTextLike);
-
-      await agent.start();
-      setClientForAccount(account.accountId, agent);
-
-      log?.info(`[${account.accountId}] XMTP provider started`);
-
-      await new Promise<void>((resolve) => {
-        const onAbort = () => {
-          void stopAgent(account.accountId, log).finally(resolve);
-        };
-        if (abortSignal?.aborted) {
-          onAbort();
-          return;
-        }
-        abortSignal?.addEventListener("abort", onAbort, { once: true });
-      });
-    },
-    stopAccount: async (ctx) => {
-      const { account, log } = ctx;
-      log?.info(`[${account.accountId}] stopping XMTP provider`);
-      await stopAgent(account.accountId, log);
-    },
+    startAccount,
+    stopAccount: stopAccountHandler,
   },
 };

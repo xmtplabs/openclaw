@@ -1,6 +1,6 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema, readJsonBodyWithLimit } from "openclaw/plugin-sdk";
 import { xmtpPlugin } from "./src/channel.js";
 import { setXmtpRuntime } from "./src/runtime.js";
 import {
@@ -10,14 +10,6 @@ import {
   handleSetupCancel,
 } from "./src/setup.js";
 import { registerXmtpCommands } from "./src/xmtp-commands.js";
-
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const raw = Buffer.concat(chunks).toString();
-  if (!raw.trim()) return {};
-  return JSON.parse(raw) as Record<string, unknown>;
-}
 
 function jsonResponse(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
@@ -80,7 +72,12 @@ const plugin = {
           return;
         }
         try {
-          const body = await readJsonBody(req);
+          const parsed = await readJsonBodyWithLimit(req, { maxBytes: 4096 });
+          if (!parsed.ok) {
+            jsonResponse(res, 400, { error: parsed.error });
+            return;
+          }
+          const body = parsed.value as Record<string, unknown>;
           const result = await handleSetup({
             accountId: typeof body.accountId === "string" ? body.accountId : undefined,
             env: typeof body.env === "string" ? (body.env as "production" | "dev") : undefined,

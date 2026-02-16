@@ -41,15 +41,23 @@ export function waitForMessage(
   timeoutMs = 30_000,
 ): Promise<{ content: string; sender: string; conversationId: string }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       reject(new Error(`waitForMessage timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     agent.on("text", async (ctx) => {
+      if (settled) return;
       const sender = await ctx.getSenderAddress();
+      if (!sender) return;
       const content = ctx.message.content;
-      const conversationId = ctx.conversation?.id as string;
+      const conversationId = (ctx.conversation?.id ?? "") as string;
       if (!predicate || predicate(content, sender)) {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         resolve({ content, sender, conversationId });
       }

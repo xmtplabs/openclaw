@@ -472,8 +472,8 @@ describe("XMTP message actions", () => {
   });
 
   describe("handleAction: send", () => {
-    it("delivers message via agent.sendText", async () => {
-      const { agent, sentToAddress } = makeFakeAgent();
+    it("delivers message via conversation.sendText", async () => {
+      const { agent, fakeConversation } = makeFakeAgent();
       setClientForAccount(ACCOUNT_ID, agent as any);
       const cfg = makeCfg();
 
@@ -484,7 +484,26 @@ describe("XMTP message actions", () => {
         accountId: ACCOUNT_ID,
       });
 
-      expect(agent.sendText).toHaveBeenCalledWith("0xRecipient", "Hello!");
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith("0xRecipient");
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("Hello!");
+      expect(result).toBeDefined();
+    });
+
+    it("creates DM when conversation not found and to is an address", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+      const ethAddress = "0xAbCdEf1234567890abcdef1234567890AbCdEf12";
+
+      const result = await xmtpMessageActions.handleAction({
+        action: "send",
+        params: { to: ethAddress, message: "Hello!" },
+        cfg,
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(agent.createDmWithAddress).toHaveBeenCalledWith(ethAddress);
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("Hello!");
       expect(result).toBeDefined();
     });
 
@@ -506,7 +525,7 @@ describe("XMTP message actions", () => {
 
   describe("supportsButtons", () => {
     it("returns false", () => {
-      expect(xmtpMessageActions.supportsButtons()).toBe(false);
+      expect(xmtpMessageActions.supportsButtons({} as any)).toBe(false);
     });
   });
 });

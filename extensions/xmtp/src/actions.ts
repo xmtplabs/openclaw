@@ -9,7 +9,7 @@ export const xmtpMessageActions: ChannelMessageActionAdapter = {
       ? (["send"] as ChannelMessageActionName[])
       : [],
 
-  supportsButtons: () => false,
+  supportsButtons: (_params) => false,
 
   handleAction: async ({ action, params, cfg, accountId }) => {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
@@ -18,8 +18,15 @@ export const xmtpMessageActions: ChannelMessageActionAdapter = {
     if (action === "send") {
       const to = readStringParam(params, "to", { required: true });
       const message = readStringParam(params, "message", { required: true, allowEmpty: true });
-      const messageId = await agent.sendText(to, message ?? "");
-      return jsonResult({ ok: true, to, messageId: messageId ?? `xmtp-${Date.now()}` });
+      let conversation = await agent.client.conversations.getConversationById(to);
+      if (!conversation && to.startsWith("0x")) {
+        conversation = await agent.createDmWithAddress(to as `0x${string}`);
+      }
+      if (!conversation) {
+        throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
+      }
+      const messageId = await conversation.sendText(message ?? "");
+      return jsonResult({ ok: true, to, messageId });
     }
 
     throw new Error(`Action "${action}" is not supported for XMTP.`);

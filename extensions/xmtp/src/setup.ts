@@ -6,7 +6,6 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, updateXmtpSection, type CoreConfig } from "./accounts.js";
-import { writeXmtpVarsToEnv } from "./lib/env-file.js";
 import {
   generateEncryptionKeyHex,
   generatePrivateKey,
@@ -80,12 +79,6 @@ export async function handleSetupComplete(): Promise<{ saved: true }> {
     env: setupResult.env,
     publicAddress: setupResult.publicAddress,
     enabled: true,
-  });
-
-  writeXmtpVarsToEnv({
-    walletKey: setupResult.walletKey,
-    dbEncryptionKey: setupResult.dbEncryptionKey,
-    env: setupResult.env,
   });
 
   await runtime.config.writeConfigFile(next);
