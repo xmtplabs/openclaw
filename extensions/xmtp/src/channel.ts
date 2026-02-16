@@ -59,7 +59,10 @@ function normalizeXmtpMessagingTarget(raw: string): string | undefined {
   return s || undefined;
 }
 
-function isGroupAllowed(params: { account: ResolvedXmtpAccount; conversationId: string }): boolean {
+export function isGroupAllowed(params: {
+  account: ResolvedXmtpAccount;
+  conversationId: string;
+}): boolean {
   const { account, conversationId } = params;
   const policy = account.config.groupPolicy ?? "open";
   if (policy === "open") {
@@ -72,7 +75,7 @@ function isGroupAllowed(params: { account: ResolvedXmtpAccount; conversationId: 
   return groups.includes("*") || groups.includes(conversationId);
 }
 
-async function handleInboundMessage(
+export async function handleInboundMessage(
   account: ResolvedXmtpAccount,
   sender: string,
   conversationId: string,
@@ -87,7 +90,9 @@ async function handleInboundMessage(
     );
   }
 
-  if (!isGroupAllowed({ account, conversationId })) {
+  const isDirect = conversationId === sender;
+
+  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
     if (account.debug) {
       log?.info(
         `[${account.accountId}] Dropped message from disallowed conversation ${conversationId.slice(0, 12)}`,
@@ -96,9 +101,72 @@ async function handleInboundMessage(
     return;
   }
 
+  // DM access control (secure defaults): "pairing" (default) / "allowlist" / "open" / "disabled"
+  if (isDirect) {
+    const dmPolicy = account.config.dmPolicy ?? "pairing";
+
+    if (dmPolicy === "disabled") {
+      if (account.debug) {
+        log?.info(
+          `[${account.accountId}] Dropped DM from ${sender.slice(0, 12)} (dmPolicy=disabled)`,
+        );
+      }
+      return;
+    }
+
+    if (dmPolicy !== "open") {
+      const configAllow = (account.config.allowFrom ?? [])
+        .map((v) => String(v).trim())
+        .filter(Boolean);
+      const storeAllow = await runtime.channel.pairing.readAllowFromStore(CHANNEL_ID);
+      const combinedAllow = [...configAllow, ...storeAllow];
+      const normalizedSender = normalizeXmtpAddress(sender);
+      const allowed =
+        combinedAllow.includes("*") ||
+        combinedAllow.some(
+          (entry) => normalizeXmtpAddress(entry).toLowerCase() === normalizedSender.toLowerCase(),
+        );
+
+      if (!allowed) {
+        if (dmPolicy === "pairing") {
+          try {
+            const { code, created } = await runtime.channel.pairing.upsertPairingRequest({
+              channel: CHANNEL_ID,
+              id: sender,
+              meta: { address: sender },
+            });
+            if (created && code) {
+              const reply = runtime.channel.pairing.buildPairingReply({
+                channel: CHANNEL_ID,
+                idLine: `Your address: ${sender}`,
+                code,
+              });
+              const agent = getClientForAccount(account.accountId);
+              if (agent) {
+                const conversation =
+                  await agent.client.conversations.getConversationById(conversationId);
+                if (conversation) {
+                  await conversation.sendText(reply);
+                }
+              }
+            }
+          } catch (err) {
+            log?.error(
+              `[${account.accountId}] Pairing reply failed for ${sender.slice(0, 12)}: ${String(err)}`,
+            );
+          }
+        } else if (account.debug) {
+          log?.info(
+            `[${account.accountId}] Blocked DM from ${sender.slice(0, 12)} (dmPolicy=${dmPolicy})`,
+          );
+        }
+        return;
+      }
+    }
+  }
+
   const cfg = runtime.config.loadConfig();
   const rawBody = content;
-  const isDirect = conversationId === sender;
 
   const route = runtime.channel.routing.resolveAgentRoute({
     cfg,
