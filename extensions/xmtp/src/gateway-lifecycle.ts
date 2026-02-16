@@ -2,14 +2,15 @@
  * XMTP gateway agent lifecycle: start, stop, event wiring.
  */
 
-import type { MessageContext } from "@xmtp/agent-sdk";
+import type { MessageContext, Reaction } from "@xmtp/agent-sdk";
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import {
+  autoProvisionAccount,
   ensureXmtpConfigured,
   setAccountPublicAddress,
   type ResolvedXmtpAccount,
 } from "./accounts.js";
-import { handleInboundMessage } from "./channel.js";
+import { handleInboundMessage, handleInboundReaction } from "./channel.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { getClientForAccount, setClientForAccount } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
@@ -40,9 +41,10 @@ export async function startAccount(ctx: {
   setStatus: (s: { accountId: string }) => void;
   log?: RuntimeLogger;
 }): Promise<void> {
-  const { account, abortSignal, setStatus, log } = ctx;
-  ensureXmtpConfigured(account);
+  const { abortSignal, setStatus, log } = ctx;
   const runtime = getXmtpRuntime();
+  const account = await autoProvisionAccount(ctx.account, runtime, log);
+  ensureXmtpConfigured(account);
 
   setStatus({ accountId: account.accountId });
 
@@ -61,9 +63,11 @@ export async function startAccount(ctx: {
   );
 
   const handleTextLike = buildTextHandler({ account, runtime, log });
+  const handleReaction = buildReactionHandler({ account, runtime, log });
 
   agent.on("text", handleTextLike);
   agent.on("markdown", handleTextLike);
+  agent.on("reaction", handleReaction);
 
   await agent.start();
   setClientForAccount(account.accountId, agent);
@@ -109,6 +113,54 @@ export async function backfillPublicAddress(params: {
     await runtime.config.writeConfigFile(next);
     log?.info(`[${account.accountId}] backfilled publicAddress to config`);
   }
+}
+
+/** Build the reaction event handler for inbound reactions. */
+export function buildReactionHandler(params: {
+  account: ResolvedXmtpAccount;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}): (msgCtx: MessageContext<Reaction>) => Promise<void> {
+  const { account, runtime, log } = params;
+
+  return async (msgCtx: MessageContext<Reaction>) => {
+    if (msgCtx.isDenied) {
+      if (account.debug) {
+        log?.info(`[${account.accountId}] Skipped reaction from denied contact`);
+      }
+      return;
+    }
+
+    const reaction = msgCtx.message?.content;
+    if (!reaction) return;
+
+    log?.info(
+      `[${account.accountId}] reaction event: ${JSON.stringify({
+        content: reaction.content,
+        action: reaction.action,
+        reference: reaction.reference,
+      })}`,
+    );
+
+    const sender = await msgCtx.getSenderAddress();
+    if (!sender) return;
+
+    const conversationId = msgCtx.conversation?.id as string;
+    const isDirect = msgCtx.isDm();
+
+    handleInboundReaction({
+      account,
+      sender,
+      conversationId,
+      reaction,
+      messageId: msgCtx.message.id,
+      isDirect,
+      runtime,
+      log,
+    }).catch((err) => {
+      log?.error(`[${account.accountId}] Reaction handling failed: ${String(err)}`);
+    });
+  };
 }
 
 /** Build the text/markdown event handler for inbound messages. */

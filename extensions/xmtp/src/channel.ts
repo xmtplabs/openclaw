@@ -144,6 +144,84 @@ export async function handleInboundMessage(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Inbound reaction handler
+// ---------------------------------------------------------------------------
+
+export async function handleInboundReaction(params: {
+  account: ResolvedXmtpAccount;
+  sender: string;
+  conversationId: string;
+  reaction: { content: string; action: number | string; reference: string };
+  messageId: string | undefined;
+  isDirect: boolean;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}) {
+  const { account, sender, conversationId, reaction, messageId, isDirect, runtime, log } = params;
+
+  const actionLabel = reaction.action === 2 ? "removed" : "added";
+
+  if (account.debug) {
+    log?.info(
+      `[${account.accountId}] Reaction from ${sender.slice(0, 12)}: ${reaction.content} ${actionLabel}`,
+    );
+  }
+
+  // Group access control (same as handleInboundMessage)
+  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
+    if (account.debug) {
+      log?.info(
+        `[${account.accountId}] Dropped reaction from disallowed conversation ${conversationId.slice(0, 12)}`,
+      );
+    }
+    return;
+  }
+
+  // DM access control (same as handleInboundMessage)
+  if (isDirect) {
+    const decision = await evaluateDmAccess({ account, sender, runtime });
+    if (!decision.allowed) {
+      if (account.debug) {
+        log?.info(
+          `[${account.accountId}] Dropped reaction from ${sender.slice(0, 12)} (dm access denied)`,
+        );
+      }
+      return;
+    }
+  }
+
+  // Format reaction as descriptive content for the inbound pipeline
+  const content = `[Reaction: ${reaction.content} ${actionLabel} to message ${reaction.reference}]`;
+
+  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
+    cfg: runtime.config.loadConfig(),
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+  });
+
+  await runInboundPipeline({
+    account,
+    sender,
+    conversationId,
+    content,
+    messageId,
+    isDirect,
+    runtime,
+    log,
+    deliverReply: async (payload: ReplyPayload) => {
+      await deliverXmtpReply({
+        payload,
+        conversationId,
+        accountId: account.accountId,
+        runtime,
+        log,
+        tableMode,
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Reply delivery
 // ---------------------------------------------------------------------------
 
@@ -195,7 +273,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
   capabilities: {
     chatTypes: ["direct", "group"],
     media: true,
-    reactions: false,
+    reactions: true,
     threads: false,
   },
   reload: { configPrefixes: ["channels.xmtp"] },
@@ -263,6 +341,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
   agentPrompt: {
     messageToolHints: () => [
       "- XMTP targets are wallet addresses or conversation topics. Use `to=<address>` for `action=send`.",
+      "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
     ],
   },
   directory: {

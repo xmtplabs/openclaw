@@ -1,6 +1,16 @@
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId, type OpenClawConfig } from "openclaw/plugin-sdk";
+import {
+  DEFAULT_ACCOUNT_ID,
+  normalizeAccountId,
+  type OpenClawConfig,
+  type PluginRuntime,
+  type RuntimeLogger,
+} from "openclaw/plugin-sdk";
 import type { XMTPConfig } from "./config-types.js";
-import { walletAddressFromPrivateKey } from "./lib/identity.js";
+import {
+  generateEncryptionKeyHex,
+  generatePrivateKey,
+  walletAddressFromPrivateKey,
+} from "./lib/identity.js";
 
 export type CoreConfig = {
   channels?: {
@@ -136,4 +146,56 @@ export function ensureXmtpConfigured(account: ResolvedXmtpAccount): void {
       "XMTP not configured: walletKey and dbEncryptionKey required. Run 'openclaw configure' to set up XMTP.",
     );
   }
+}
+
+/**
+ * Auto-generate missing walletKey and/or dbEncryptionKey, persist to config,
+ * and return the updated account. If both keys are already present, returns
+ * the account unchanged (no-op).
+ */
+export async function autoProvisionAccount(
+  account: ResolvedXmtpAccount,
+  runtime: PluginRuntime,
+  log?: RuntimeLogger,
+): Promise<ResolvedXmtpAccount> {
+  const needWalletKey = !account.walletKey;
+  const needEncryptionKey = !account.dbEncryptionKey;
+
+  if (!needWalletKey && !needEncryptionKey) {
+    return account;
+  }
+
+  const update: Partial<XMTPConfig> = {};
+  let walletKey = account.walletKey;
+  let dbEncryptionKey = account.dbEncryptionKey;
+  let publicAddress = account.publicAddress;
+
+  if (needWalletKey) {
+    walletKey = generatePrivateKey();
+    publicAddress = walletAddressFromPrivateKey(walletKey);
+    update.walletKey = walletKey;
+    update.publicAddress = publicAddress;
+  }
+
+  if (needEncryptionKey) {
+    dbEncryptionKey = generateEncryptionKeyHex();
+    update.dbEncryptionKey = dbEncryptionKey;
+  }
+
+  const cfg = runtime.config.loadConfig();
+  const next = updateXmtpSection(cfg, update);
+  await runtime.config.writeConfigFile(next);
+
+  const generated = [needWalletKey && "walletKey", needEncryptionKey && "dbEncryptionKey"]
+    .filter(Boolean)
+    .join(", ");
+  log?.info(`[${account.accountId}] auto-provisioned XMTP keys: ${generated}`);
+
+  return {
+    ...account,
+    walletKey,
+    dbEncryptionKey,
+    publicAddress,
+    configured: true,
+  };
 }
