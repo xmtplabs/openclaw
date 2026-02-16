@@ -42,8 +42,8 @@ cat > /data/openclaw.json << 'EOF'
   },
   "plugins": {
     "entries": {
-      "telegram": {
-        "enabled": true
+      "xmtp": {
+        "enabled": true,
       }
     }
   }
