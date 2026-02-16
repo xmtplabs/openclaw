@@ -361,3 +361,32 @@ describe("createEnsResolver", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// resolver instance management
+// ---------------------------------------------------------------------------
+
+import { getResolverForAccount, setResolverForAccount } from "./ens-resolver.js";
+
+describe("resolver instance management", () => {
+  beforeEach(() => {
+    setResolverForAccount("test", null);
+  });
+
+  it("returns null when no resolver set", () => {
+    expect(getResolverForAccount("test")).toBeNull();
+  });
+
+  it("stores and retrieves resolver by account", () => {
+    const resolver = createEnsResolver();
+    setResolverForAccount("test", resolver);
+    expect(getResolverForAccount("test")).toBe(resolver);
+  });
+
+  it("clears resolver when set to null", () => {
+    const resolver = createEnsResolver();
+    setResolverForAccount("test", resolver);
+    setResolverForAccount("test", null);
+    expect(getResolverForAccount("test")).toBeNull();
+  });
+});

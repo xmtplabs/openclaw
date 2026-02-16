@@ -169,3 +169,21 @@ export function createEnsResolver(apiKey?: string): EnsResolver {
 
   return { resolveEnsName, resolveAddress, resolveAll };
 }
+
+// ---------------------------------------------------------------------------
+// Per-account resolver storage (mirrors outbound.ts agent pattern)
+// ---------------------------------------------------------------------------
+
+const resolvers = new Map<string, EnsResolver>();
+
+export function getResolverForAccount(accountId: string): EnsResolver | null {
+  return resolvers.get(accountId) ?? null;
+}
+
+export function setResolverForAccount(accountId: string, resolver: EnsResolver | null): void {
+  if (resolver) {
+    resolvers.set(accountId, resolver);
+  } else {
+    resolvers.delete(accountId);
+  }
+}
