@@ -3,6 +3,7 @@
  * Uses @xmtp/agent-sdk to listen for messages and forward them via the reply pipeline.
  */
 
+import type { MessageContext } from "@xmtp/agent-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
@@ -477,7 +478,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       const stateDir = runtime.state.resolveStateDir();
       const agent = await createAgentFromAccount(account, stateDir);
 
-      agent.on("text", async (msgCtx) => {
+      const handleTextLike = async (msgCtx: MessageContext<string>) => {
         log?.info(
           `[${account.accountId}] text event: ${JSON.stringify({ content: msgCtx.message?.content?.slice(0, 50), id: msgCtx.message?.id })}`,
         );
@@ -497,7 +498,10 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         ).catch((err) => {
           log?.error(`[${account.accountId}] Message handling failed: ${String(err)}`);
         });
-      });
+      };
+
+      agent.on("text", handleTextLike);
+      agent.on("markdown", handleTextLike);
 
       await agent.start();
       setClientForAccount(account.accountId, agent);
