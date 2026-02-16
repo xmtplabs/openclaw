@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { extractEnsNames, extractEthAddresses, isEnsName, isEthAddress } from "./ens-resolver.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createEnsResolver,
+  extractEnsNames,
+  extractEthAddresses,
+  isEnsName,
+  isEthAddress,
+} from "./ens-resolver.js";
 
 describe("isEnsName", () => {
   it("returns true for simple .eth name", () => {
@@ -92,5 +98,266 @@ describe("extractEthAddresses", () => {
 
   it("returns empty for no matches", () => {
     expect(extractEthAddresses("no addresses")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createEnsResolver
+// ---------------------------------------------------------------------------
+
+describe("createEnsResolver", () => {
+  const NICK_ADDRESS = "0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5";
+  const NICK_NAME = "nick.eth";
+
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /** Helper: mock a successful forward-resolution response. */
+  function mockForwardResponse(name: string, address: string) {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ address, identity: name }),
+    });
+  }
+
+  /** Helper: mock a successful reverse-resolution response. */
+  function mockReverseResponse(address: string, name: string) {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ address, name }),
+    });
+  }
+
+  /** Helper: mock an empty (no data) response. */
+  function mockEmptyResponse() {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}),
+    });
+  }
+
+  /** Helper: mock a non-ok HTTP response. */
+  function mockHttpError(status = 500) {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status,
+      statusText: "Internal Server Error",
+    });
+  }
+
+  /** Helper: mock a network error (fetch throws). */
+  function mockNetworkError() {
+    fetchMock.mockRejectedValueOnce(new Error("network error"));
+  }
+
+  /** Flush all pending retry sleeps (advance timers for each retry). */
+  async function flushRetries() {
+    // Retry delays: 100ms, 200ms, 400ms — advance past each.
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(500);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // resolveEnsName (forward: name -> address)
+  // -----------------------------------------------------------------------
+
+  describe("resolveEnsName (forward: name -> address)", () => {
+    it("resolves an ENS name to an address", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      const result = await resolver.resolveEnsName(NICK_NAME);
+      expect(result).toBe(NICK_ADDRESS);
+      expect(fetchMock).toHaveBeenCalledWith(
+        `https://api.web3.bio/ns/ens/${NICK_NAME}`,
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
+    it("returns null on API failure", async () => {
+      mockHttpError();
+      mockHttpError();
+      mockHttpError();
+      const resolver = createEnsResolver();
+      const promise = resolver.resolveEnsName(NICK_NAME);
+      await flushRetries();
+      const result = await promise;
+      expect(result).toBeNull();
+    });
+
+    it("returns null on network error", async () => {
+      mockNetworkError();
+      mockNetworkError();
+      mockNetworkError();
+      const resolver = createEnsResolver();
+      const promise = resolver.resolveEnsName(NICK_NAME);
+      await flushRetries();
+      const result = await promise;
+      expect(result).toBeNull();
+    });
+
+    it("passes API key header when configured", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver("my-secret-key");
+      await resolver.resolveEnsName(NICK_NAME);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: { "X-API-KEY": "Bearer my-secret-key" },
+        }),
+      );
+    });
+
+    it("omits API key header when not configured", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      await resolver.resolveEnsName(NICK_NAME);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
+    it("retries on failure up to 3 times", async () => {
+      mockHttpError();
+      mockHttpError();
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      const promise = resolver.resolveEnsName(NICK_NAME);
+      await flushRetries();
+      const result = await promise;
+      expect(result).toBe(NICK_ADDRESS);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("returns null after all retries exhausted", async () => {
+      mockNetworkError();
+      mockNetworkError();
+      mockNetworkError();
+      const resolver = createEnsResolver();
+      const promise = resolver.resolveEnsName(NICK_NAME);
+      await flushRetries();
+      const result = await promise;
+      expect(result).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // resolveAddress (reverse: address -> name)
+  // -----------------------------------------------------------------------
+
+  describe("resolveAddress (reverse: address -> name)", () => {
+    it("resolves an address to an ENS name", async () => {
+      mockReverseResponse(NICK_ADDRESS, NICK_NAME);
+      const resolver = createEnsResolver();
+      const result = await resolver.resolveAddress(NICK_ADDRESS);
+      expect(result).toBe(NICK_NAME);
+    });
+
+    it("returns null when no name found", async () => {
+      mockEmptyResponse();
+      const resolver = createEnsResolver();
+      const result = await resolver.resolveAddress(NICK_ADDRESS);
+      expect(result).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // caching
+  // -----------------------------------------------------------------------
+
+  describe("caching", () => {
+    it("caches forward resolution results", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      const first = await resolver.resolveEnsName(NICK_NAME);
+      const second = await resolver.resolveEnsName(NICK_NAME);
+      expect(first).toBe(NICK_ADDRESS);
+      expect(second).toBe(NICK_ADDRESS);
+      // fetch called only once — second call served from cache
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("populates reverse cache from forward resolution", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      await resolver.resolveEnsName(NICK_NAME);
+      // Now reverse lookup should be served from cache (no new fetch)
+      const name = await resolver.resolveAddress(NICK_ADDRESS);
+      expect(name).toBe(NICK_NAME);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("expires cache entries after TTL", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const resolver = createEnsResolver();
+      await resolver.resolveEnsName(NICK_NAME);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Advance past 5-minute TTL
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+
+      await resolver.resolveEnsName(NICK_NAME);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not cache null from network errors", async () => {
+      // First call: all retries fail -> null
+      mockNetworkError();
+      mockNetworkError();
+      mockNetworkError();
+      const resolver = createEnsResolver();
+      const promise1 = resolver.resolveEnsName(NICK_NAME);
+      await flushRetries();
+      const result1 = await promise1;
+      expect(result1).toBeNull();
+
+      // Second call: succeeds — should NOT be served from cache
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      const result2 = await resolver.resolveEnsName(NICK_NAME);
+      expect(result2).toBe(NICK_ADDRESS);
+      // 3 retries + 1 successful = 4 total fetch calls
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // resolveAll
+  // -----------------------------------------------------------------------
+
+  describe("resolveAll", () => {
+    it("batch-resolves mixed names and addresses", async () => {
+      mockForwardResponse(NICK_NAME, NICK_ADDRESS);
+      mockReverseResponse(NICK_ADDRESS, NICK_NAME);
+      const resolver = createEnsResolver();
+      const results = await resolver.resolveAll([NICK_NAME, NICK_ADDRESS]);
+      expect(results.get(NICK_NAME)).toBe(NICK_ADDRESS);
+      expect(results.get(NICK_ADDRESS)).toBe(NICK_NAME);
+    });
+
+    it("returns null for unresolvable identifiers", async () => {
+      mockEmptyResponse();
+      const resolver = createEnsResolver();
+      const results = await resolver.resolveAll(["unknown.eth"]);
+      expect(results.get("unknown.eth")).toBeNull();
+    });
+
+    it("returns empty map for empty input", async () => {
+      const resolver = createEnsResolver();
+      const results = await resolver.resolveAll([]);
+      expect(results.size).toBe(0);
+    });
   });
 });
