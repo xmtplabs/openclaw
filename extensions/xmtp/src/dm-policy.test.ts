@@ -13,6 +13,7 @@ import {
 import { setResolverForAccount, createEnsResolver } from "./lib/ens-resolver.js";
 import { setClientForAccount } from "./outbound.js";
 import {
+  createMockRuntime,
   createTestAccount,
   makeFakeAgent,
   TEST_OWNER_ADDRESS,
@@ -105,32 +106,11 @@ describe("isGroupAllowed", () => {
 // evaluateDmAccess
 // ---------------------------------------------------------------------------
 
-function makeMockRuntime(overrides?: {
-  storeAllowFrom?: string[];
-  pairingResult?: { code: string; created: boolean };
-}) {
-  const readAllowFromStore = vi.fn(async () => overrides?.storeAllowFrom ?? []);
-  const upsertPairingRequest = vi.fn(
-    async () => overrides?.pairingResult ?? { code: "TESTCODE", created: true },
-  );
-  return {
-    runtime: {
-      channel: {
-        pairing: {
-          readAllowFromStore,
-          upsertPairingRequest,
-        },
-      },
-    } as any,
-    mocks: { readAllowFromStore, upsertPairingRequest },
-  };
-}
-
 describe("evaluateDmAccess", () => {
   describe("dmPolicy: open", () => {
     it("allows any sender", async () => {
       const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -141,7 +121,7 @@ describe("evaluateDmAccess", () => {
   describe("dmPolicy: disabled", () => {
     it("blocks all senders", async () => {
       const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "disabled" });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -156,7 +136,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: [TEST_SENDER_ADDRESS],
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -169,7 +149,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: [],
       });
-      const { runtime } = makeMockRuntime({ storeAllowFrom: [TEST_SENDER_ADDRESS] });
+      const { runtime } = createMockRuntime({ storeAllowFrom: [TEST_SENDER_ADDRESS] });
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -182,7 +162,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: ["0xOther"],
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -195,7 +175,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: ["*"],
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -208,7 +188,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: [TEST_SENDER_ADDRESS.toUpperCase()],
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({
         account,
@@ -225,7 +205,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "allowlist",
         allowFrom: [`xmtp:${TEST_SENDER_ADDRESS}`],
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -241,7 +221,7 @@ describe("evaluateDmAccess", () => {
         allowFrom: [],
         ownerAddress: TEST_SENDER_ADDRESS,
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -255,7 +235,7 @@ describe("evaluateDmAccess", () => {
         allowFrom: [],
         ownerAddress: TEST_SENDER_ADDRESS,
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -268,7 +248,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "disabled",
         ownerAddress: TEST_SENDER_ADDRESS,
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -282,7 +262,7 @@ describe("evaluateDmAccess", () => {
         allowFrom: [],
         ownerAddress: TEST_SENDER_ADDRESS.toUpperCase(),
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({
         account,
@@ -300,7 +280,7 @@ describe("evaluateDmAccess", () => {
         allowFrom: [],
         ownerAddress: `xmtp:${TEST_SENDER_ADDRESS}`,
       });
-      const { runtime } = makeMockRuntime();
+      const { runtime } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -313,7 +293,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "pairing",
         allowFrom: [],
       });
-      const { runtime, mocks } = makeMockRuntime();
+      const { runtime, mocks } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -334,7 +314,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "pairing",
         allowFrom: [],
       });
-      const { runtime, mocks } = makeMockRuntime();
+      const { runtime, mocks } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -355,7 +335,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "pairing",
         allowFrom: [],
       });
-      const { runtime } = makeMockRuntime({
+      const { runtime } = createMockRuntime({
         pairingResult: { code: "TESTCODE", created: false },
       });
 
@@ -375,7 +355,7 @@ describe("evaluateDmAccess", () => {
         dmPolicy: "pairing",
         allowFrom: [],
       });
-      const { runtime } = makeMockRuntime({ storeAllowFrom: [TEST_SENDER_ADDRESS] });
+      const { runtime } = createMockRuntime({ storeAllowFrom: [TEST_SENDER_ADDRESS] });
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -388,7 +368,7 @@ describe("evaluateDmAccess", () => {
         allowFrom: [],
       });
       account.config.dmPolicy = undefined;
-      const { runtime, mocks } = makeMockRuntime();
+      const { runtime, mocks } = createMockRuntime();
 
       const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
 
@@ -437,7 +417,7 @@ describe("ENS resolution in evaluateDmAccess", () => {
       dmPolicy: "pairing",
       ownerAddress: "owner.eth",
     });
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
     expect(result).toEqual({ allowed: true });
@@ -452,7 +432,7 @@ describe("ENS resolution in evaluateDmAccess", () => {
       dmPolicy: "allowlist",
       allowFrom: ["friend.eth"],
     });
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
     expect(result).toEqual({ allowed: true });
@@ -467,7 +447,7 @@ describe("ENS resolution in evaluateDmAccess", () => {
       dmPolicy: "allowlist",
       allowFrom: ["other.eth"],
     });
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
     expect(result).toEqual({ allowed: false, reason: "blocked", dmPolicy: "allowlist" });
@@ -480,7 +460,7 @@ describe("ENS resolution in evaluateDmAccess", () => {
       dmPolicy: "allowlist",
       allowFrom: ["friend.eth"],
     });
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
     expect(result).toEqual({ allowed: false, reason: "blocked", dmPolicy: "allowlist" });

@@ -6,11 +6,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, updateXmtpSection, type CoreConfig } from "./accounts.js";
-import {
-  generateEncryptionKeyHex,
-  generatePrivateKey,
-  walletAddressFromPrivateKey,
-} from "./lib/identity.js";
+import { generateXmtpIdentity } from "./lib/identity.js";
 import { runTemporaryXmtpClient } from "./lib/xmtp-client.js";
 import { getXmtpRuntime } from "./runtime.js";
 
@@ -29,9 +25,7 @@ export async function handleSetup(params: {
 }): Promise<{ publicAddress: string }> {
   const env = params.env === "dev" ? "dev" : "production";
 
-  const walletKey = generatePrivateKey();
-  const dbEncryptionKey = generateEncryptionKeyHex();
-  const publicAddress = walletAddressFromPrivateKey(walletKey);
+  const { walletKey, dbEncryptionKey, publicAddress } = generateXmtpIdentity();
 
   await runTemporaryXmtpClient({
     walletKey,

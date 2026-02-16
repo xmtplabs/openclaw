@@ -23,14 +23,10 @@ import {
 } from "./accounts.js";
 import { xmtpMessageActions } from "./actions.js";
 import { xmtpChannelConfigSchema } from "./config-schema.js";
-import {
-  evaluateDmAccess,
-  isGroupAllowed,
-  normalizeXmtpAddress,
-  sendPairingReply,
-} from "./dm-policy.js";
+import { normalizeXmtpAddress } from "./dm-policy.js";
 import { startAccount, stopAccountHandler } from "./gateway-lifecycle.js";
 import { runInboundPipeline } from "./inbound-pipeline.js";
+import { enforceInboundAccessControl } from "./lib/access-control.js";
 import { isEnsName } from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
@@ -60,6 +56,53 @@ function normalizeXmtpMessagingTarget(raw: string): string | undefined {
 export { isGroupAllowed } from "./dm-policy.js";
 
 // ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function resolveTableMode(runtime: PluginRuntime, accountId: string) {
+  return runtime.channel.text.resolveMarkdownTableMode({
+    cfg: runtime.config.loadConfig(),
+    channel: CHANNEL_ID,
+    accountId,
+  });
+}
+
+/** Save attachment buffers via the media API and return paths + filenames. */
+async function saveInboundMedia(
+  items: Array<{ content: Uint8Array; mimeType: string; filename?: string }>,
+  runtime: PluginRuntime,
+  accountId: string,
+  log?: RuntimeLogger,
+): Promise<{ media: Array<{ path: string; contentType?: string }>; filenames: string[] }> {
+  const media: Array<{ path: string; contentType?: string }> = [];
+  const filenames: string[] = [];
+
+  for (const item of items) {
+    try {
+      const saved = await runtime.channel.media.saveMediaBuffer(
+        Buffer.from(item.content),
+        item.mimeType,
+        "inbound",
+        undefined,
+        item.filename,
+      );
+      media.push({ path: saved.path, contentType: saved.contentType });
+      filenames.push(item.filename ?? "attachment");
+    } catch (err) {
+      log?.error(`[${accountId}] Failed to save attachment: ${String(err)}`);
+    }
+  }
+
+  return { media, filenames };
+}
+
+function formatAttachmentLabel(filenames: string[]): string {
+  return filenames.length === 1
+    ? `[Attachment: ${filenames[0]}]`
+    : `[Attachments: ${filenames.join(", ")}]`;
+}
+
+// ---------------------------------------------------------------------------
 // Inbound message handler (thin orchestrator)
 // ---------------------------------------------------------------------------
 
@@ -84,48 +127,18 @@ export async function handleInboundMessage(params: {
     );
   }
 
-  // Group access control
-  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
-    if (account.debug) {
-      log?.info(
-        `[${account.accountId}] Dropped message from disallowed conversation ${conversationId.slice(0, 12)}`,
-      );
-    }
-    return;
-  }
-
-  // DM access control
-  if (isDirect) {
-    const decision = await evaluateDmAccess({ account, sender, runtime });
-    if (!decision.allowed) {
-      if (decision.reason === "pairing" && decision.created && decision.code) {
-        await sendPairingReply({
-          account,
-          sender,
-          conversationId,
-          code: decision.code,
-          runtime,
-          log,
-        });
-      } else if (decision.reason === "blocked" && account.debug) {
-        log?.info(
-          `[${account.accountId}] Blocked DM from ${sender.slice(0, 12)} (dmPolicy=${decision.dmPolicy})`,
-        );
-      } else if (decision.reason === "disabled" && account.debug) {
-        log?.info(
-          `[${account.accountId}] Dropped DM from ${sender.slice(0, 12)} (dmPolicy=disabled)`,
-        );
-      }
-      return;
-    }
-  }
-
-  // Pipeline: route -> envelope -> session -> dispatch
-  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
-    cfg: runtime.config.loadConfig(),
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
+  const allowed = await enforceInboundAccessControl({
+    account,
+    sender,
+    conversationId,
+    isDirect,
+    runtime,
+    log,
+    label: "message",
   });
+  if (!allowed) return;
+
+  const tableMode = resolveTableMode(runtime, account.accountId);
 
   await runInboundPipeline({
     account,
@@ -179,37 +192,21 @@ export async function handleInboundReaction(params: {
     );
   }
 
-  // Group access control (same as handleInboundMessage)
-  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
-    if (account.debug) {
-      log?.info(
-        `[${account.accountId}] Dropped reaction from disallowed conversation ${conversationId.slice(0, 12)}`,
-      );
-    }
-    return;
-  }
-
-  // DM access control (same as handleInboundMessage)
-  if (isDirect) {
-    const decision = await evaluateDmAccess({ account, sender, runtime });
-    if (!decision.allowed) {
-      if (account.debug) {
-        log?.info(
-          `[${account.accountId}] Dropped reaction from ${sender.slice(0, 12)} (dm access denied)`,
-        );
-      }
-      return;
-    }
-  }
+  const allowed = await enforceInboundAccessControl({
+    account,
+    sender,
+    conversationId,
+    isDirect,
+    runtime,
+    log,
+    label: "reaction",
+  });
+  if (!allowed) return;
 
   // Format reaction as descriptive content for the inbound pipeline
   const content = `[Reaction: ${reaction.content} ${actionLabel} to message ${reaction.reference}]`;
 
-  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
-    cfg: runtime.config.loadConfig(),
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-  });
+  const tableMode = resolveTableMode(runtime, account.accountId);
 
   await runInboundPipeline({
     account,
@@ -256,66 +253,47 @@ export async function handleInboundAttachment(params: {
   const { account, sender, conversationId, remoteAttachments, messageId, isDirect, runtime, log } =
     params;
 
-  // Group access control (same as handleInboundMessage)
-  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
-    if (account.debug) {
-      log?.info(
-        `[${account.accountId}] Dropped attachment from disallowed conversation ${conversationId.slice(0, 12)}`,
-      );
-    }
-    return;
-  }
-
-  // DM access control (same as handleInboundMessage)
-  if (isDirect) {
-    const decision = await evaluateDmAccess({ account, sender, runtime });
-    if (!decision.allowed) {
-      if (account.debug) {
-        log?.info(
-          `[${account.accountId}] Dropped attachment from ${sender.slice(0, 12)} (dm access denied)`,
-        );
-      }
-      return;
-    }
-  }
+  const allowed = await enforceInboundAccessControl({
+    account,
+    sender,
+    conversationId,
+    isDirect,
+    runtime,
+    log,
+    label: "attachment",
+  });
+  if (!allowed) return;
 
   // Download, decrypt, and save each attachment
-  const media: Array<{ path: string; contentType?: string }> = [];
-  const filenames: string[] = [];
-
+  const decryptedItems: Array<{ content: Uint8Array; mimeType: string; filename?: string }> = [];
   for (const ra of remoteAttachments) {
     try {
       const decrypted = await downloadRemoteAttachment(ra);
-      const saved = await runtime.channel.media.saveMediaBuffer(
-        Buffer.from(decrypted.content),
-        decrypted.mimeType,
-        "inbound",
-        undefined,
-        decrypted.filename,
-      );
-      media.push({ path: saved.path, contentType: saved.contentType });
-      filenames.push(decrypted.filename ?? ra.filename ?? "attachment");
+      decryptedItems.push({
+        content: decrypted.content,
+        mimeType: decrypted.mimeType,
+        filename: decrypted.filename ?? ra.filename,
+      });
     } catch (err) {
       log?.error(`[${account.accountId}] Failed to download remote attachment: ${String(err)}`);
     }
   }
 
+  const { media, filenames } = await saveInboundMedia(
+    decryptedItems,
+    runtime,
+    account.accountId,
+    log,
+  );
   if (media.length === 0) return;
 
-  const content =
-    filenames.length === 1
-      ? `[Attachment: ${filenames[0]}]`
-      : `[Attachments: ${filenames.join(", ")}]`;
+  const content = formatAttachmentLabel(filenames);
 
   if (account.debug) {
     log?.info(`[${account.accountId}] Inbound attachment from ${sender.slice(0, 12)}: ${content}`);
   }
 
-  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
-    cfg: runtime.config.loadConfig(),
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-  });
+  const tableMode = resolveTableMode(runtime, account.accountId);
 
   await runInboundPipeline({
     account,
@@ -363,55 +341,31 @@ export async function handleInboundInlineAttachment(params: {
   const { account, sender, conversationId, attachments, messageId, isDirect, runtime, log } =
     params;
 
-  // Group access control
-  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
-    if (account.debug) {
-      log?.info(
-        `[${account.accountId}] Dropped inline attachment from disallowed conversation ${conversationId.slice(0, 12)}`,
-      );
-    }
-    return;
-  }
-
-  // DM access control
-  if (isDirect) {
-    const decision = await evaluateDmAccess({ account, sender, runtime });
-    if (!decision.allowed) {
-      if (account.debug) {
-        log?.info(
-          `[${account.accountId}] Dropped inline attachment from ${sender.slice(0, 12)} (dm access denied)`,
-        );
-      }
-      return;
-    }
-  }
+  const allowed = await enforceInboundAccessControl({
+    account,
+    sender,
+    conversationId,
+    isDirect,
+    runtime,
+    log,
+    label: "inline attachment",
+  });
+  if (!allowed) return;
 
   // Save each inline attachment directly (no download needed)
-  const media: Array<{ path: string; contentType?: string }> = [];
-  const filenames: string[] = [];
-
-  for (const att of attachments) {
-    try {
-      const saved = await runtime.channel.media.saveMediaBuffer(
-        Buffer.from(att.content),
-        att.mimeType,
-        "inbound",
-        undefined,
-        att.filename,
-      );
-      media.push({ path: saved.path, contentType: saved.contentType });
-      filenames.push(att.filename ?? "attachment");
-    } catch (err) {
-      log?.error(`[${account.accountId}] Failed to save inline attachment: ${String(err)}`);
-    }
-  }
-
+  const { media, filenames } = await saveInboundMedia(
+    attachments.map((att) => ({
+      content: att.content,
+      mimeType: att.mimeType,
+      filename: att.filename,
+    })),
+    runtime,
+    account.accountId,
+    log,
+  );
   if (media.length === 0) return;
 
-  const content =
-    filenames.length === 1
-      ? `[Attachment: ${filenames[0]}]`
-      : `[Attachments: ${filenames.join(", ")}]`;
+  const content = formatAttachmentLabel(filenames);
 
   if (account.debug) {
     log?.info(
@@ -419,11 +373,7 @@ export async function handleInboundInlineAttachment(params: {
     );
   }
 
-  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
-    cfg: runtime.config.loadConfig(),
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-  });
+  const tableMode = resolveTableMode(runtime, account.accountId);
 
   await runInboundPipeline({
     account,

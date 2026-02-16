@@ -4,6 +4,7 @@ import { createRemoteAttachment, encryptAttachment } from "@xmtp/agent-sdk";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, type CoreConfig } from "./accounts.js";
 import { getResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
+import { getOrCreateConversation } from "./lib/xmtp-client.js";
 import { getXmtpRuntime } from "./runtime.js";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -140,13 +141,7 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
     const target = await resolveOutboundTarget(to, account.accountId);
-    let conversation = await agent.client.conversations.getConversationById(target);
-    if (!conversation && target.startsWith("0x")) {
-      conversation = await agent.createDmWithAddress(target as `0x${string}`);
-    }
-    if (!conversation) {
-      throw new Error(`Conversation not found: ${target.slice(0, 12)}...`);
-    }
+    const conversation = await getOrCreateConversation(agent, target);
     const messageId = await conversation.sendText(text);
     return { channel: CHANNEL_ID, messageId };
   },
@@ -155,13 +150,7 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
     const target = await resolveOutboundTarget(to, account.accountId);
-    let conversation = await agent.client.conversations.getConversationById(target);
-    if (!conversation && target.startsWith("0x")) {
-      conversation = await agent.createDmWithAddress(target as `0x${string}`);
-    }
-    if (!conversation) {
-      throw new Error(`Conversation not found: ${target.slice(0, 12)}...`);
-    }
+    const conversation = await getOrCreateConversation(agent, target);
 
     // Send caption text first if provided alongside media
     if (text && mediaUrl) {

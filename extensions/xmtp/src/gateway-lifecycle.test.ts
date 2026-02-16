@@ -23,9 +23,10 @@ import {
 import { setClientForAccount, getClientForAccount } from "./outbound.js";
 import { setXmtpRuntime } from "./runtime.js";
 import {
+  createMockEnsResolver,
+  createMockRuntime,
   createTestAccount,
   makeFakeAgent,
-  createMockRuntime,
   TEST_OWNER_ADDRESS,
   TEST_SENDER_ADDRESS,
 } from "./test-utils/unit-helpers.js";
@@ -627,12 +628,7 @@ describe("owner DM creation with ENS resolution", () => {
     });
     const resolvedAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 
-    // Create a mock ENS resolver
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => resolvedAddr),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver({ resolveEnsName: resolvedAddr });
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -672,12 +668,7 @@ describe("owner DM creation with ENS resolution", () => {
       ownerAddress: "nonexistent.eth",
     });
 
-    // Create a mock ENS resolver that returns null (resolution failure)
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver();
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -717,12 +708,7 @@ describe("owner DM creation with ENS resolution", () => {
       ownerAddress: regularAddr,
     });
 
-    // Create a mock ENS resolver (should not be called)
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver();
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -775,11 +761,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("resolves sender address to ENS name", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "vitalik.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "vitalik.eth" });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -794,11 +776,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("does not set senderName when resolveAddress returns null", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -815,11 +793,7 @@ describe("resolveInboundEns", () => {
     const resolved = new Map<string, string | null>([
       ["nick.eth", "0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5"],
     ]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -836,11 +810,7 @@ describe("resolveInboundEns", () => {
   it("resolves Ethereum addresses mentioned in message content", async () => {
     const addr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
     const resolved = new Map<string, string | null>([[addr, "vitalik.eth"]]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -855,11 +825,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("does not set ensContext when no identifiers found in content", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -877,11 +843,7 @@ describe("resolveInboundEns", () => {
   it("resolves group members for non-DM conversations", async () => {
     const memberAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
     const resolved = new Map<string, string | null>([[memberAddr, "vitalik.eth"]]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -905,11 +867,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("skips group member resolution for DM conversations", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -928,11 +886,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("handles group member resolution failure gracefully", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -978,11 +932,7 @@ describe("buildTextHandler ENS integration", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "sender.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "sender.eth" });
     setResolverForAccount("default", mockResolver);
 
     const handler = buildTextHandler({ account, runtime });
@@ -1043,11 +993,7 @@ describe("buildReactionHandler ENS integration", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "reactor.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "reactor.eth" });
     setResolverForAccount("default", mockResolver);
 
     const handler = buildReactionHandler({ account, runtime });

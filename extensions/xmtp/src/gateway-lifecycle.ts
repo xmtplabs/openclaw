@@ -31,6 +31,7 @@ import {
   extractEthAddresses,
   formatEnsContext,
   formatGroupMembersWithEns,
+  resolveOwnerAddress,
 } from "./lib/ens-resolver.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { getClientForAccount, setClientForAccount } from "./outbound.js";
@@ -109,19 +110,13 @@ export async function startAccount(ctx: {
   // Proactively open DM with owner so the channel is ready
   if (account.ownerAddress) {
     try {
-      let ownerAddr = account.ownerAddress;
-      if (isEnsName(ownerAddr)) {
-        const resolved = await ensResolver.resolveEnsName(ownerAddr);
-        if (resolved) {
-          ownerAddr = resolved;
-          log?.info(
-            `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} → ${ownerAddr.slice(0, 12)}...`,
-          );
-        } else {
-          log?.warn?.(
-            `[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`,
-          );
-        }
+      const ownerAddr = await resolveOwnerAddress(account.ownerAddress, ensResolver);
+      if (ownerAddr !== account.ownerAddress) {
+        log?.info(
+          `[${account.accountId}] Resolved owner ENS ${account.ownerAddress} → ${ownerAddr.slice(0, 12)}...`,
+        );
+      } else if (isEnsName(account.ownerAddress)) {
+        log?.warn?.(`[${account.accountId}] Could not resolve owner ENS: ${account.ownerAddress}`);
       }
       if (/^0x[0-9a-fA-F]{40}$/.test(ownerAddr)) {
         await agent.createDmWithAddress(ownerAddr as `0x${string}`);
@@ -230,32 +225,52 @@ export async function resolveInboundEns(params: {
   return result;
 }
 
-/** Build the reaction event handler for inbound reactions. */
-export function buildReactionHandler(params: {
+// ---------------------------------------------------------------------------
+// Generic inbound handler factory
+// ---------------------------------------------------------------------------
+
+type HandlerBaseParams = {
   account: ResolvedXmtpAccount;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
-}): (msgCtx: MessageContext<Reaction>) => Promise<void> {
-  const { account, runtime, log } = params;
+};
 
-  return async (msgCtx: MessageContext<Reaction>) => {
+/**
+ * Create an inbound event handler with shared boilerplate:
+ * denied-check → content extraction → getSenderAddress → resolveInboundEns → dispatch.
+ */
+function createInboundHandler<T>(
+  base: HandlerBaseParams,
+  config: {
+    label: string;
+    /** Extract and validate content from the message context. Return null to skip. */
+    extractContent: (msgCtx: MessageContext<T>) => T | null | undefined;
+    /** Return text to use for ENS resolution (empty string for non-text content). */
+    ensText: (content: T) => string;
+    /** Dispatch the validated content to the appropriate channel handler. */
+    dispatch: (ctx: {
+      content: T;
+      sender: string;
+      conversationId: string;
+      messageId: string | undefined;
+      isDirect: boolean;
+      ens: { senderName?: string; groupMembers?: string; ensContext?: string };
+    }) => Promise<void>;
+  },
+): (msgCtx: MessageContext<T>) => Promise<void> {
+  const { account, log } = base;
+  const { label, extractContent, ensText, dispatch } = config;
+
+  return async (msgCtx: MessageContext<T>) => {
     if (msgCtx.isDenied) {
       if (account.debug) {
-        log?.info(`[${account.accountId}] Skipped reaction from denied contact`);
+        log?.info(`[${account.accountId}] Skipped ${label} from denied contact`);
       }
       return;
     }
 
-    const reaction = msgCtx.message?.content;
-    if (!reaction) return;
-
-    log?.info(
-      `[${account.accountId}] reaction event: ${JSON.stringify({
-        content: reaction.content,
-        action: reaction.action,
-        reference: reaction.reference,
-      })}`,
-    );
+    const content = extractContent(msgCtx);
+    if (content == null) return;
 
     const sender = await msgCtx.getSenderAddress();
     if (!sender) return;
@@ -263,235 +278,168 @@ export function buildReactionHandler(params: {
     const conversationId = msgCtx.conversation?.id as string;
     const isDirect = msgCtx.isDm();
 
-    const reactionContent = `[Reaction: ${reaction.content}]`;
     const ens = await resolveInboundEns({
       accountId: account.accountId,
       sender,
-      content: reactionContent,
+      content: ensText(content),
       isDirect,
       conversation: msgCtx.conversation as any,
       log,
     });
 
-    handleInboundReaction({
-      account,
-      sender,
-      conversationId,
-      reaction,
-      messageId: msgCtx.message.id,
-      isDirect,
-      runtime,
-      log,
-      ...ens,
-    }).catch((err) => {
-      log?.error(`[${account.accountId}] Reaction handling failed: ${String(err)}`);
-    });
+    try {
+      await dispatch({
+        content,
+        sender,
+        conversationId,
+        messageId: msgCtx.message.id,
+        isDirect,
+        ens,
+      });
+    } catch (err) {
+      log?.error(`[${account.accountId}] ${label} handling failed: ${String(err)}`);
+    }
   };
 }
 
+// ---------------------------------------------------------------------------
+// Concrete handler builders (thin wrappers over createInboundHandler)
+// ---------------------------------------------------------------------------
+
 /** Build the text/markdown event handler for inbound messages. */
-export function buildTextHandler(params: {
-  account: ResolvedXmtpAccount;
-  runtime: PluginRuntime;
-  log?: RuntimeLogger;
-}): (msgCtx: MessageContext<string>) => Promise<void> {
+export function buildTextHandler(params: HandlerBaseParams) {
   const { account, runtime, log } = params;
+  return createInboundHandler<string>(params, {
+    label: "message",
+    extractContent: (msgCtx) => {
+      const content = msgCtx.message?.content;
+      if (typeof content !== "string") return null;
+      log?.info(
+        `[${account.accountId}] text event: ${JSON.stringify({ content: content.slice(0, 50), id: msgCtx.message?.id })}`,
+      );
+      return content;
+    },
+    ensText: (content) => content,
+    dispatch: async ({ content, sender, conversationId, messageId, isDirect, ens }) => {
+      await handleInboundMessage({
+        account,
+        sender,
+        conversationId,
+        content,
+        messageId,
+        isDirect,
+        runtime,
+        log,
+        ...ens,
+      });
+    },
+  });
+}
 
-  return async (msgCtx: MessageContext<string>) => {
-    // Skip messages from denied contacts
-    if (msgCtx.isDenied) {
-      if (account.debug) {
-        log?.info(`[${account.accountId}] Skipped message from denied contact`);
-      }
-      return;
-    }
-
-    const content = msgCtx.message?.content;
-    if (typeof content !== "string") return;
-
-    log?.info(
-      `[${account.accountId}] text event: ${JSON.stringify({ content: content.slice(0, 50), id: msgCtx.message?.id })}`,
-    );
-    const sender = await msgCtx.getSenderAddress();
-    if (!sender) return;
-    const conversation = msgCtx.conversation;
-    const conversationId = conversation?.id as string;
-    const isDirect = msgCtx.isDm();
-
-    const ens = await resolveInboundEns({
-      accountId: account.accountId,
-      sender,
-      content,
-      isDirect,
-      conversation: conversation as any,
-      log,
-    });
-
-    handleInboundMessage({
-      account,
-      sender,
-      conversationId,
-      content,
-      messageId: msgCtx.message.id,
-      isDirect,
-      runtime,
-      log,
-      ...ens,
-    }).catch((err) => {
-      log?.error(`[${account.accountId}] Message handling failed: ${String(err)}`);
-    });
-  };
+/** Build the reaction event handler for inbound reactions. */
+export function buildReactionHandler(params: HandlerBaseParams) {
+  const { account, runtime, log } = params;
+  return createInboundHandler<Reaction>(params, {
+    label: "reaction",
+    extractContent: (msgCtx) => {
+      const reaction = msgCtx.message?.content;
+      if (!reaction) return null;
+      log?.info(
+        `[${account.accountId}] reaction event: ${JSON.stringify({
+          content: reaction.content,
+          action: reaction.action,
+          reference: reaction.reference,
+        })}`,
+      );
+      return reaction;
+    },
+    ensText: (reaction) => `[Reaction: ${reaction.content}]`,
+    dispatch: async ({ content: reaction, sender, conversationId, messageId, isDirect, ens }) => {
+      await handleInboundReaction({
+        account,
+        sender,
+        conversationId,
+        reaction,
+        messageId,
+        isDirect,
+        runtime,
+        log,
+        ...ens,
+      });
+    },
+  });
 }
 
 /** Build the attachment event handler for inbound RemoteAttachments. */
-export function buildAttachmentHandler(params: {
-  account: ResolvedXmtpAccount;
-  runtime: PluginRuntime;
-  log?: RuntimeLogger;
-}): (msgCtx: MessageContext<RemoteAttachment>) => Promise<void> {
+export function buildAttachmentHandler(params: HandlerBaseParams) {
   const { account, runtime, log } = params;
-
-  return async (msgCtx: MessageContext<RemoteAttachment>) => {
-    if (msgCtx.isDenied) {
-      if (account.debug) {
-        log?.info(`[${account.accountId}] Skipped attachment from denied contact`);
-      }
-      return;
-    }
-
-    const remoteAttachment = msgCtx.message?.content;
-    if (!remoteAttachment) return;
-
-    const sender = await msgCtx.getSenderAddress();
-    if (!sender) return;
-
-    const conversationId = msgCtx.conversation?.id as string;
-    const isDirect = msgCtx.isDm();
-
-    const ens = await resolveInboundEns({
-      accountId: account.accountId,
-      sender,
-      content: "",
-      isDirect,
-      conversation: msgCtx.conversation as any,
-      log,
-    });
-
-    handleInboundAttachment({
-      account,
-      sender,
-      conversationId,
-      remoteAttachments: [remoteAttachment],
-      messageId: msgCtx.message.id,
-      isDirect,
-      runtime,
-      log,
-      ...ens,
-    }).catch((err) => {
-      log?.error(`[${account.accountId}] Attachment handling failed: ${String(err)}`);
-    });
-  };
+  return createInboundHandler<RemoteAttachment>(params, {
+    label: "attachment",
+    extractContent: (msgCtx) => msgCtx.message?.content ?? null,
+    ensText: () => "",
+    dispatch: async ({ content, sender, conversationId, messageId, isDirect, ens }) => {
+      await handleInboundAttachment({
+        account,
+        sender,
+        conversationId,
+        remoteAttachments: [content],
+        messageId,
+        isDirect,
+        runtime,
+        log,
+        ...ens,
+      });
+    },
+  });
 }
 
 /** Build the inline-attachment event handler for inbound Attachments (raw bytes). */
-export function buildInlineAttachmentHandler(params: {
-  account: ResolvedXmtpAccount;
-  runtime: PluginRuntime;
-  log?: RuntimeLogger;
-}): (msgCtx: MessageContext<Attachment>) => Promise<void> {
+export function buildInlineAttachmentHandler(params: HandlerBaseParams) {
   const { account, runtime, log } = params;
-
-  return async (msgCtx: MessageContext<Attachment>) => {
-    if (msgCtx.isDenied) {
-      if (account.debug) {
-        log?.info(`[${account.accountId}] Skipped inline attachment from denied contact`);
-      }
-      return;
-    }
-
-    const attachment = msgCtx.message?.content;
-    if (!attachment) return;
-
-    const sender = await msgCtx.getSenderAddress();
-    if (!sender) return;
-
-    const conversationId = msgCtx.conversation?.id as string;
-    const isDirect = msgCtx.isDm();
-
-    const ens = await resolveInboundEns({
-      accountId: account.accountId,
-      sender,
-      content: "",
-      isDirect,
-      conversation: msgCtx.conversation as any,
-      log,
-    });
-
-    handleInboundInlineAttachment({
-      account,
-      sender,
-      conversationId,
-      attachments: [attachment],
-      messageId: msgCtx.message.id,
-      isDirect,
-      runtime,
-      log,
-      ...ens,
-    }).catch((err) => {
-      log?.error(`[${account.accountId}] Inline attachment handling failed: ${String(err)}`);
-    });
-  };
+  return createInboundHandler<Attachment>(params, {
+    label: "inline attachment",
+    extractContent: (msgCtx) => msgCtx.message?.content ?? null,
+    ensText: () => "",
+    dispatch: async ({ content, sender, conversationId, messageId, isDirect, ens }) => {
+      await handleInboundInlineAttachment({
+        account,
+        sender,
+        conversationId,
+        attachments: [content],
+        messageId,
+        isDirect,
+        runtime,
+        log,
+        ...ens,
+      });
+    },
+  });
 }
 
 /** Build the multi-attachment event handler for inbound MultiRemoteAttachments. */
-export function buildMultiAttachmentHandler(params: {
-  account: ResolvedXmtpAccount;
-  runtime: PluginRuntime;
-  log?: RuntimeLogger;
-}): (msgCtx: MessageContext<MultiRemoteAttachment>) => Promise<void> {
+export function buildMultiAttachmentHandler(params: HandlerBaseParams) {
   const { account, runtime, log } = params;
-
-  return async (msgCtx: MessageContext<MultiRemoteAttachment>) => {
-    if (msgCtx.isDenied) {
-      if (account.debug) {
-        log?.info(`[${account.accountId}] Skipped multi-attachment from denied contact`);
-      }
-      return;
-    }
-
-    const multiAttachment = msgCtx.message?.content;
-    if (!multiAttachment?.attachments?.length) return;
-
-    const sender = await msgCtx.getSenderAddress();
-    if (!sender) return;
-
-    const conversationId = msgCtx.conversation?.id as string;
-    const isDirect = msgCtx.isDm();
-
-    const ens = await resolveInboundEns({
-      accountId: account.accountId,
-      sender,
-      content: "",
-      isDirect,
-      conversation: msgCtx.conversation as any,
-      log,
-    });
-
-    // RemoteAttachmentInfo is structurally compatible with RemoteAttachment
-    const remoteAttachments = multiAttachment.attachments as unknown as RemoteAttachment[];
-
-    handleInboundAttachment({
-      account,
-      sender,
-      conversationId,
-      remoteAttachments,
-      messageId: msgCtx.message.id,
-      isDirect,
-      runtime,
-      log,
-      ...ens,
-    }).catch((err) => {
-      log?.error(`[${account.accountId}] Multi-attachment handling failed: ${String(err)}`);
-    });
-  };
+  return createInboundHandler<MultiRemoteAttachment>(params, {
+    label: "multi-attachment",
+    extractContent: (msgCtx) => {
+      const multi = msgCtx.message?.content;
+      return multi?.attachments?.length ? multi : null;
+    },
+    ensText: () => "",
+    dispatch: async ({ content: multi, sender, conversationId, messageId, isDirect, ens }) => {
+      // RemoteAttachmentInfo is structurally compatible with RemoteAttachment
+      const remoteAttachments = multi.attachments as unknown as RemoteAttachment[];
+      await handleInboundAttachment({
+        account,
+        sender,
+        conversationId,
+        remoteAttachments,
+        messageId,
+        isDirect,
+        runtime,
+        log,
+        ...ens,
+      });
+    },
+  });
 }

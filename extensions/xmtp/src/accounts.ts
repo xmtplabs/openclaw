@@ -9,6 +9,7 @@ import type { XMTPConfig } from "./config-types.js";
 import {
   generateEncryptionKeyHex,
   generatePrivateKey,
+  generateXmtpIdentity,
   walletAddressFromPrivateKey,
 } from "./lib/identity.js";
 
@@ -173,14 +174,20 @@ export async function autoProvisionAccount(
   let dbEncryptionKey = account.dbEncryptionKey;
   let publicAddress = account.publicAddress;
 
-  if (needWalletKey) {
+  if (needWalletKey && needEncryptionKey) {
+    const identity = generateXmtpIdentity();
+    walletKey = identity.walletKey;
+    dbEncryptionKey = identity.dbEncryptionKey;
+    publicAddress = identity.publicAddress;
+    update.walletKey = walletKey;
+    update.dbEncryptionKey = dbEncryptionKey;
+    update.publicAddress = publicAddress;
+  } else if (needWalletKey) {
     walletKey = generatePrivateKey();
     publicAddress = walletAddressFromPrivateKey(walletKey);
     update.walletKey = walletKey;
     update.publicAddress = publicAddress;
-  }
-
-  if (needEncryptionKey) {
+  } else if (needEncryptionKey) {
     dbEncryptionKey = generateEncryptionKeyHex();
     update.dbEncryptionKey = dbEncryptionKey;
   }
