@@ -5,6 +5,7 @@
  */
 
 import type { PluginRuntime, ReplyPayload, RuntimeLogger } from "openclaw/plugin-sdk";
+import { buildAgentMediaPayload } from "openclaw/plugin-sdk";
 import type { ResolvedXmtpAccount } from "./accounts.js";
 
 const CHANNEL_ID = "xmtp";
@@ -18,6 +19,7 @@ export async function runInboundPipeline(params: {
   isDirect: boolean;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
+  media?: Array<{ path: string; contentType?: string }>;
   deliverReply: (payload: ReplyPayload) => Promise<void>;
   onDeliveryError?: (err: unknown, info: { kind: string }) => void;
 }): Promise<void> {
@@ -65,6 +67,8 @@ export async function runInboundPipeline(params: {
     body: content,
   });
 
+  const mediaPayload = params.media?.length ? buildAgentMediaPayload(params.media) : {};
+
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: content,
@@ -82,6 +86,7 @@ export async function runInboundPipeline(params: {
     MessageSid: messageId,
     OriginatingChannel: CHANNEL_ID,
     OriginatingTo: `xmtp:${conversationId}`,
+    ...mediaPayload,
   });
 
   await runtime.channel.session.recordInboundSession({

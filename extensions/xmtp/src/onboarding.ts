@@ -164,6 +164,20 @@ export const xmtpOnboardingAdapter: ChannelOnboardingAdapter = {
       );
     }
 
+    const ownerAddr = await prompter.text({
+      message: "Owner wallet address (auto-paired, press Enter to skip)",
+      placeholder: "0x...",
+      validate: (value) => {
+        const raw = String(value ?? "").trim();
+        if (!raw) return undefined; // optional
+        if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) return "Invalid Ethereum address";
+        return undefined;
+      },
+    });
+    if (ownerAddr?.trim()) {
+      next = updateXmtpSection(next, { ownerAddress: ownerAddr.trim() });
+    }
+
     return { cfg: next };
   },
 

@@ -19,11 +19,13 @@ let setupResult: {
   dbEncryptionKey: string;
   env: "production" | "dev";
   publicAddress: string;
+  ownerAddress?: string;
 } | null = null;
 
 export async function handleSetup(params: {
   accountId?: string;
   env?: "production" | "dev";
+  ownerAddress?: string;
 }): Promise<{ publicAddress: string }> {
   const env = params.env === "dev" ? "dev" : "production";
 
@@ -38,7 +40,13 @@ export async function handleSetup(params: {
     accountId: params.accountId ?? DEFAULT_ACCOUNT_ID,
   });
 
-  setupResult = { walletKey, dbEncryptionKey, env, publicAddress };
+  setupResult = {
+    walletKey,
+    dbEncryptionKey,
+    env,
+    publicAddress,
+    ownerAddress: params.ownerAddress,
+  };
   return { publicAddress };
 }
 
@@ -79,6 +87,7 @@ export async function handleSetupComplete(): Promise<{ saved: true }> {
     env: setupResult.env,
     publicAddress: setupResult.publicAddress,
     enabled: true,
+    ...(setupResult.ownerAddress ? { ownerAddress: setupResult.ownerAddress } : {}),
   });
 
   await runtime.config.writeConfigFile(next);

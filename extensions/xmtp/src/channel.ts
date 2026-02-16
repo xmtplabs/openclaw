@@ -3,6 +3,8 @@
  * Composes dm-policy, inbound-pipeline, and gateway-lifecycle modules.
  */
 
+import type { Attachment, RemoteAttachment } from "@xmtp/agent-sdk";
+import { downloadRemoteAttachment } from "@xmtp/agent-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
@@ -222,6 +224,209 @@ export async function handleInboundReaction(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Inbound attachment handler (RemoteAttachment — download + decrypt)
+// ---------------------------------------------------------------------------
+
+export async function handleInboundAttachment(params: {
+  account: ResolvedXmtpAccount;
+  sender: string;
+  conversationId: string;
+  remoteAttachments: RemoteAttachment[];
+  messageId: string | undefined;
+  isDirect: boolean;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}) {
+  const { account, sender, conversationId, remoteAttachments, messageId, isDirect, runtime, log } =
+    params;
+
+  // Group access control (same as handleInboundMessage)
+  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
+    if (account.debug) {
+      log?.info(
+        `[${account.accountId}] Dropped attachment from disallowed conversation ${conversationId.slice(0, 12)}`,
+      );
+    }
+    return;
+  }
+
+  // DM access control (same as handleInboundMessage)
+  if (isDirect) {
+    const decision = await evaluateDmAccess({ account, sender, runtime });
+    if (!decision.allowed) {
+      if (account.debug) {
+        log?.info(
+          `[${account.accountId}] Dropped attachment from ${sender.slice(0, 12)} (dm access denied)`,
+        );
+      }
+      return;
+    }
+  }
+
+  // Download, decrypt, and save each attachment
+  const media: Array<{ path: string; contentType?: string }> = [];
+  const filenames: string[] = [];
+
+  for (const ra of remoteAttachments) {
+    try {
+      const decrypted = await downloadRemoteAttachment(ra);
+      const saved = await runtime.channel.media.saveMediaBuffer(
+        Buffer.from(decrypted.content),
+        decrypted.mimeType,
+        "inbound",
+        undefined,
+        decrypted.filename,
+      );
+      media.push({ path: saved.path, contentType: saved.contentType });
+      filenames.push(decrypted.filename ?? ra.filename ?? "attachment");
+    } catch (err) {
+      log?.error(`[${account.accountId}] Failed to download remote attachment: ${String(err)}`);
+    }
+  }
+
+  if (media.length === 0) return;
+
+  const content =
+    filenames.length === 1
+      ? `[Attachment: ${filenames[0]}]`
+      : `[Attachments: ${filenames.join(", ")}]`;
+
+  if (account.debug) {
+    log?.info(`[${account.accountId}] Inbound attachment from ${sender.slice(0, 12)}: ${content}`);
+  }
+
+  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
+    cfg: runtime.config.loadConfig(),
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+  });
+
+  await runInboundPipeline({
+    account,
+    sender,
+    conversationId,
+    content,
+    messageId,
+    isDirect,
+    runtime,
+    log,
+    media,
+    deliverReply: async (payload: ReplyPayload) => {
+      await deliverXmtpReply({
+        payload,
+        conversationId,
+        accountId: account.accountId,
+        runtime,
+        log,
+        tableMode,
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Inbound inline attachment handler (Attachment — bytes already decoded)
+// ---------------------------------------------------------------------------
+
+export async function handleInboundInlineAttachment(params: {
+  account: ResolvedXmtpAccount;
+  sender: string;
+  conversationId: string;
+  attachments: Attachment[];
+  messageId: string | undefined;
+  isDirect: boolean;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}) {
+  const { account, sender, conversationId, attachments, messageId, isDirect, runtime, log } =
+    params;
+
+  // Group access control
+  if (!isDirect && !isGroupAllowed({ account, conversationId })) {
+    if (account.debug) {
+      log?.info(
+        `[${account.accountId}] Dropped inline attachment from disallowed conversation ${conversationId.slice(0, 12)}`,
+      );
+    }
+    return;
+  }
+
+  // DM access control
+  if (isDirect) {
+    const decision = await evaluateDmAccess({ account, sender, runtime });
+    if (!decision.allowed) {
+      if (account.debug) {
+        log?.info(
+          `[${account.accountId}] Dropped inline attachment from ${sender.slice(0, 12)} (dm access denied)`,
+        );
+      }
+      return;
+    }
+  }
+
+  // Save each inline attachment directly (no download needed)
+  const media: Array<{ path: string; contentType?: string }> = [];
+  const filenames: string[] = [];
+
+  for (const att of attachments) {
+    try {
+      const saved = await runtime.channel.media.saveMediaBuffer(
+        Buffer.from(att.content),
+        att.mimeType,
+        "inbound",
+        undefined,
+        att.filename,
+      );
+      media.push({ path: saved.path, contentType: saved.contentType });
+      filenames.push(att.filename ?? "attachment");
+    } catch (err) {
+      log?.error(`[${account.accountId}] Failed to save inline attachment: ${String(err)}`);
+    }
+  }
+
+  if (media.length === 0) return;
+
+  const content =
+    filenames.length === 1
+      ? `[Attachment: ${filenames[0]}]`
+      : `[Attachments: ${filenames.join(", ")}]`;
+
+  if (account.debug) {
+    log?.info(
+      `[${account.accountId}] Inbound inline attachment from ${sender.slice(0, 12)}: ${content}`,
+    );
+  }
+
+  const tableMode = runtime.channel.text.resolveMarkdownTableMode({
+    cfg: runtime.config.loadConfig(),
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+  });
+
+  await runInboundPipeline({
+    account,
+    sender,
+    conversationId,
+    content,
+    messageId,
+    isDirect,
+    runtime,
+    log,
+    media,
+    deliverReply: async (payload: ReplyPayload) => {
+      await deliverXmtpReply({
+        payload,
+        conversationId,
+        accountId: account.accountId,
+        runtime,
+        log,
+        tableMode,
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Reply delivery
 // ---------------------------------------------------------------------------
 
@@ -297,7 +502,15 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         cfg,
         sectionKey: CHANNEL_ID,
         accountId,
-        clearBaseFields: ["name", "walletKey", "dbEncryptionKey", "env", "debug", "publicAddress"],
+        clearBaseFields: [
+          "name",
+          "walletKey",
+          "dbEncryptionKey",
+          "env",
+          "debug",
+          "publicAddress",
+          "ownerAddress",
+        ],
       }),
     isConfigured: (account) => account.configured,
     describeAccount: (account) => ({
@@ -307,6 +520,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       configured: account.configured,
       env: account.env,
       publicAddress: account.publicAddress || undefined,
+      ownerAddress: account.ownerAddress || undefined,
     }),
   },
   security: {
@@ -330,8 +544,6 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
         if (!t) return false;
         // Ethereum address: exactly 42 hex chars (0x + 40)
         if (t.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(t)) return true;
-        // XMTP conversation topic: at least 20 chars containing a /
-        if (t.length >= 20 && t.includes("/")) return true;
         return false;
       },
       hint: "<address or conversation topic>",
@@ -339,10 +551,25 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
   },
   actions: xmtpMessageActions,
   agentPrompt: {
-    messageToolHints: () => [
-      "- XMTP targets are wallet addresses or conversation topics. Use `to=<address>` for `action=send`.",
-      "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
-    ],
+    messageToolHints: ({ cfg, accountId }) => {
+      const hints = [
+        "- XMTP targets are wallet addresses or conversation topics. Use `to=<address>` for `action=send`.",
+        "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
+      ];
+      try {
+        const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
+        if (!account.config.pinataApiKey || !account.config.pinataSecretKey) {
+          hints.push(
+            "- Media sending is NOT available: Pinata IPFS credentials are not configured for this XMTP account. Do not attempt to send images or files.",
+          );
+        } else {
+          hints.push("- Media sending is available. You can include images and files in messages.");
+        }
+      } catch {
+        // If account resolution fails, omit media hint
+      }
+      return hints;
+    },
   },
   directory: {
     self: async () => null,

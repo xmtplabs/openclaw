@@ -232,6 +232,100 @@ describe("evaluateDmAccess", () => {
     });
   });
 
+  describe("ownerAddress auto-allow", () => {
+    it("allows owner under pairing policy", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "pairing",
+        allowFrom: [],
+        ownerAddress: TEST_SENDER_ADDRESS,
+      });
+      const { runtime } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+
+      expect(result).toEqual({ allowed: true });
+    });
+
+    it("allows owner under allowlist policy", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "allowlist",
+        allowFrom: [],
+        ownerAddress: TEST_SENDER_ADDRESS,
+      });
+      const { runtime } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+
+      expect(result).toEqual({ allowed: true });
+    });
+
+    it("does NOT allow owner when dmPolicy is disabled", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "disabled",
+        ownerAddress: TEST_SENDER_ADDRESS,
+      });
+      const { runtime } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+
+      expect(result).toEqual({ allowed: false, reason: "disabled" });
+    });
+
+    it("matches owner address case-insensitively", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "pairing",
+        allowFrom: [],
+        ownerAddress: TEST_SENDER_ADDRESS.toUpperCase(),
+      });
+      const { runtime } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({
+        account,
+        sender: TEST_SENDER_ADDRESS.toLowerCase(),
+        runtime,
+      });
+
+      expect(result).toEqual({ allowed: true });
+    });
+
+    it("normalizes xmtp: prefix on owner address", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "pairing",
+        allowFrom: [],
+        ownerAddress: `xmtp:${TEST_SENDER_ADDRESS}`,
+      });
+      const { runtime } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+
+      expect(result).toEqual({ allowed: true });
+    });
+
+    it("behaves normally when no owner is set", async () => {
+      const account = createTestAccount({
+        address: TEST_OWNER_ADDRESS,
+        dmPolicy: "pairing",
+        allowFrom: [],
+      });
+      const { runtime, mocks } = makeMockRuntime();
+
+      const result = await evaluateDmAccess({ account, sender: TEST_SENDER_ADDRESS, runtime });
+
+      expect(result).toEqual({
+        allowed: false,
+        reason: "pairing",
+        code: "TESTCODE",
+        created: true,
+      });
+      expect(mocks.upsertPairingRequest).toHaveBeenCalled();
+    });
+  });
+
   describe("dmPolicy: pairing", () => {
     it("returns pairing decision with code for unknown sender", async () => {
       const account = createTestAccount({

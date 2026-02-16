@@ -29,6 +29,7 @@ export function createTestAccountConfig(params: {
   allowFrom?: Array<string | number>;
   groups?: string[];
   debug?: boolean;
+  ownerAddress?: string;
 }): XMTPAccountConfig {
   return {
     env: "dev",
@@ -38,6 +39,7 @@ export function createTestAccountConfig(params: {
     groups: params.groups,
     debug: params.debug ?? true,
     publicAddress: params.address,
+    ...(params.ownerAddress ? { ownerAddress: params.ownerAddress } : {}),
   };
 }
 
@@ -52,6 +54,7 @@ export function createTestAccount(params: {
   allowFrom?: Array<string | number>;
   groups?: string[];
   debug?: boolean;
+  ownerAddress?: string;
 }): ResolvedXmtpAccount {
   const config = createTestAccountConfig(params);
   return {
@@ -63,6 +66,7 @@ export function createTestAccount(params: {
     env: "dev",
     debug: params.debug ?? true,
     publicAddress: params.address,
+    ownerAddress: params.ownerAddress,
     config: config,
   };
 }

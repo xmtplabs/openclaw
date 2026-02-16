@@ -30,6 +30,8 @@ export type ResolvedXmtpAccount = {
   debug: boolean;
   /** Ethereum address; from config or derived from walletKey. */
   publicAddress: string;
+  /** Owner address (auto-paired, DM created on startup). */
+  ownerAddress?: string;
   config: XMTPConfig;
 };
 
@@ -127,6 +129,7 @@ export function resolveXmtpAccount(params: {
     env: base.env === "dev" ? "dev" : "production",
     debug: base.debug ?? false,
     publicAddress,
+    ownerAddress: base.ownerAddress?.trim() || undefined,
     config: base,
   };
 }

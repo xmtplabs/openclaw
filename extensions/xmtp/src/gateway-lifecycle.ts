@@ -2,7 +2,13 @@
  * XMTP gateway agent lifecycle: start, stop, event wiring.
  */
 
-import type { MessageContext, Reaction } from "@xmtp/agent-sdk";
+import type {
+  Attachment,
+  MessageContext,
+  MultiRemoteAttachment,
+  Reaction,
+  RemoteAttachment,
+} from "@xmtp/agent-sdk";
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import {
   autoProvisionAccount,
@@ -10,7 +16,12 @@ import {
   setAccountPublicAddress,
   type ResolvedXmtpAccount,
 } from "./accounts.js";
-import { handleInboundMessage, handleInboundReaction } from "./channel.js";
+import {
+  handleInboundAttachment,
+  handleInboundInlineAttachment,
+  handleInboundMessage,
+  handleInboundReaction,
+} from "./channel.js";
 import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { getClientForAccount, setClientForAccount } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
@@ -64,15 +75,31 @@ export async function startAccount(ctx: {
 
   const handleTextLike = buildTextHandler({ account, runtime, log });
   const handleReaction = buildReactionHandler({ account, runtime, log });
+  const handleAttachment = buildAttachmentHandler({ account, runtime, log });
+  const handleInlineAttachment = buildInlineAttachmentHandler({ account, runtime, log });
+  const handleMultiAttachment = buildMultiAttachmentHandler({ account, runtime, log });
 
   agent.on("text", handleTextLike);
   agent.on("markdown", handleTextLike);
   agent.on("reaction", handleReaction);
+  agent.on("attachment", handleAttachment);
+  agent.on("inline-attachment", handleInlineAttachment);
+  agent.on("multi-attachment", handleMultiAttachment);
 
   await agent.start();
   setClientForAccount(account.accountId, agent);
 
   log?.info(`[${account.accountId}] XMTP provider started`);
+
+  // Proactively open DM with owner so the channel is ready
+  if (account.ownerAddress) {
+    try {
+      await agent.createDmWithAddress(account.ownerAddress as `0x${string}`);
+      log?.info(`[${account.accountId}] Owner DM ready (${account.ownerAddress.slice(0, 12)}...)`);
+    } catch (err) {
+      log?.warn?.(`[${account.accountId}] Could not create owner DM: ${String(err)}`);
+    }
+  }
 
   await new Promise<void>((resolve) => {
     const onAbort = () => {
@@ -202,6 +229,129 @@ export function buildTextHandler(params: {
       log,
     }).catch((err) => {
       log?.error(`[${account.accountId}] Message handling failed: ${String(err)}`);
+    });
+  };
+}
+
+/** Build the attachment event handler for inbound RemoteAttachments. */
+export function buildAttachmentHandler(params: {
+  account: ResolvedXmtpAccount;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}): (msgCtx: MessageContext<RemoteAttachment>) => Promise<void> {
+  const { account, runtime, log } = params;
+
+  return async (msgCtx: MessageContext<RemoteAttachment>) => {
+    if (msgCtx.isDenied) {
+      if (account.debug) {
+        log?.info(`[${account.accountId}] Skipped attachment from denied contact`);
+      }
+      return;
+    }
+
+    const remoteAttachment = msgCtx.message?.content;
+    if (!remoteAttachment) return;
+
+    const sender = await msgCtx.getSenderAddress();
+    if (!sender) return;
+
+    const conversationId = msgCtx.conversation?.id as string;
+    const isDirect = msgCtx.isDm();
+
+    handleInboundAttachment({
+      account,
+      sender,
+      conversationId,
+      remoteAttachments: [remoteAttachment],
+      messageId: msgCtx.message.id,
+      isDirect,
+      runtime,
+      log,
+    }).catch((err) => {
+      log?.error(`[${account.accountId}] Attachment handling failed: ${String(err)}`);
+    });
+  };
+}
+
+/** Build the inline-attachment event handler for inbound Attachments (raw bytes). */
+export function buildInlineAttachmentHandler(params: {
+  account: ResolvedXmtpAccount;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}): (msgCtx: MessageContext<Attachment>) => Promise<void> {
+  const { account, runtime, log } = params;
+
+  return async (msgCtx: MessageContext<Attachment>) => {
+    if (msgCtx.isDenied) {
+      if (account.debug) {
+        log?.info(`[${account.accountId}] Skipped inline attachment from denied contact`);
+      }
+      return;
+    }
+
+    const attachment = msgCtx.message?.content;
+    if (!attachment) return;
+
+    const sender = await msgCtx.getSenderAddress();
+    if (!sender) return;
+
+    const conversationId = msgCtx.conversation?.id as string;
+    const isDirect = msgCtx.isDm();
+
+    handleInboundInlineAttachment({
+      account,
+      sender,
+      conversationId,
+      attachments: [attachment],
+      messageId: msgCtx.message.id,
+      isDirect,
+      runtime,
+      log,
+    }).catch((err) => {
+      log?.error(`[${account.accountId}] Inline attachment handling failed: ${String(err)}`);
+    });
+  };
+}
+
+/** Build the multi-attachment event handler for inbound MultiRemoteAttachments. */
+export function buildMultiAttachmentHandler(params: {
+  account: ResolvedXmtpAccount;
+  runtime: PluginRuntime;
+  log?: RuntimeLogger;
+}): (msgCtx: MessageContext<MultiRemoteAttachment>) => Promise<void> {
+  const { account, runtime, log } = params;
+
+  return async (msgCtx: MessageContext<MultiRemoteAttachment>) => {
+    if (msgCtx.isDenied) {
+      if (account.debug) {
+        log?.info(`[${account.accountId}] Skipped multi-attachment from denied contact`);
+      }
+      return;
+    }
+
+    const multiAttachment = msgCtx.message?.content;
+    if (!multiAttachment?.attachments?.length) return;
+
+    const sender = await msgCtx.getSenderAddress();
+    if (!sender) return;
+
+    const conversationId = msgCtx.conversation?.id as string;
+    const isDirect = msgCtx.isDm();
+
+    // RemoteAttachmentInfo is structurally compatible with RemoteAttachment
+    const remoteAttachments = multiAttachment.attachments as unknown as RemoteAttachment[];
+
+    handleInboundAttachment({
+      account,
+      sender,
+      conversationId,
+      remoteAttachments,
+      messageId: msgCtx.message.id,
+      isDirect,
+      runtime,
+      log,
+    }).catch((err) => {
+      log?.error(`[${account.accountId}] Multi-attachment handling failed: ${String(err)}`);
     });
   };
 }
