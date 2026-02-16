@@ -3,6 +3,7 @@ import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
 import { createRemoteAttachment, encryptAttachment } from "@xmtp/agent-sdk";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, type CoreConfig } from "./accounts.js";
+import { getResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
 import { getXmtpRuntime } from "./runtime.js";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -37,6 +38,15 @@ export function getAgentOrThrow(accountId: string): Agent {
     throw new Error(`XMTP agent not running for account ${accountId}. Is the gateway started?`);
   }
   return agent;
+}
+
+/** Resolve an ENS name to an address if applicable. */
+async function resolveOutboundTarget(to: string, accountId: string): Promise<string> {
+  if (!isEnsName(to)) return to;
+  const resolver = getResolverForAccount(accountId);
+  if (!resolver) return to;
+  const resolved = await resolver.resolveEnsName(to);
+  return resolved ?? to;
 }
 
 /** Extract filename from a URL path. */
@@ -129,12 +139,13 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
   sendText: async ({ cfg, to, text, accountId }) => {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
-    let conversation = await agent.client.conversations.getConversationById(to);
-    if (!conversation && to.startsWith("0x")) {
-      conversation = await agent.createDmWithAddress(to as `0x${string}`);
+    const target = await resolveOutboundTarget(to, account.accountId);
+    let conversation = await agent.client.conversations.getConversationById(target);
+    if (!conversation && target.startsWith("0x")) {
+      conversation = await agent.createDmWithAddress(target as `0x${string}`);
     }
     if (!conversation) {
-      throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
+      throw new Error(`Conversation not found: ${target.slice(0, 12)}...`);
     }
     const messageId = await conversation.sendText(text);
     return { channel: CHANNEL_ID, messageId };
@@ -143,12 +154,13 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
   sendMedia: async ({ cfg, to, accountId, mediaUrl, text }) => {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
-    let conversation = await agent.client.conversations.getConversationById(to);
-    if (!conversation && to.startsWith("0x")) {
-      conversation = await agent.createDmWithAddress(to as `0x${string}`);
+    const target = await resolveOutboundTarget(to, account.accountId);
+    let conversation = await agent.client.conversations.getConversationById(target);
+    if (!conversation && target.startsWith("0x")) {
+      conversation = await agent.createDmWithAddress(target as `0x${string}`);
     }
     if (!conversation) {
-      throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
+      throw new Error(`Conversation not found: ${target.slice(0, 12)}...`);
     }
 
     // Send caption text first if provided alongside media
