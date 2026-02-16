@@ -463,11 +463,12 @@ describe("XMTP message actions", () => {
   });
 
   describe("listActions", () => {
-    it("returns send action when accounts exist", () => {
+    it("returns send and react actions when accounts exist", () => {
       const cfg = makeCfg();
       const actions = xmtpMessageActions.listActions({ cfg });
 
       expect(actions).toContain("send");
+      expect(actions).toContain("react");
     });
   });
 
@@ -520,6 +521,75 @@ describe("XMTP message actions", () => {
           accountId: ACCOUNT_ID,
         }),
       ).rejects.toThrow('Action "unsupported" is not supported');
+    });
+  });
+
+  describe("handleAction: react", () => {
+    it("sends reaction with correct params", async () => {
+      const { agent, fakeConversation } = makeFakeAgent();
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+
+      const result = await xmtpMessageActions.handleAction({
+        action: "react",
+        params: { to: "convo-123", messageId: "msg-42", emoji: "\u2764\uFE0F" },
+        cfg,
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(fakeConversation.sendReaction).toHaveBeenCalledWith({
+        reference: "msg-42",
+        referenceInboxId: "",
+        action: 1,
+        content: "\u2764\uFE0F",
+        schema: 1,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          details: expect.objectContaining({ ok: true, added: "\u2764\uFE0F" }),
+        }),
+      );
+    });
+
+    it("sends removal reaction when remove=true", async () => {
+      const { agent, fakeConversation } = makeFakeAgent();
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+
+      const result = await xmtpMessageActions.handleAction({
+        action: "react",
+        params: { to: "convo-123", messageId: "msg-42", emoji: "\uD83D\uDC4D", remove: true },
+        cfg,
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(fakeConversation.sendReaction).toHaveBeenCalledWith({
+        reference: "msg-42",
+        referenceInboxId: "",
+        action: 2,
+        content: "\uD83D\uDC4D",
+        schema: 1,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          details: expect.objectContaining({ ok: true, removed: "\uD83D\uDC4D" }),
+        }),
+      );
+    });
+
+    it("throws when conversation not found", async () => {
+      const { agent } = makeFakeAgent({ conversationId: "other-convo" });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+
+      await expect(
+        xmtpMessageActions.handleAction({
+          action: "react",
+          params: { to: "missing-convo", messageId: "msg-42", emoji: "\u2764\uFE0F" },
+          cfg,
+          accountId: ACCOUNT_ID,
+        }),
+      ).rejects.toThrow("Conversation not found");
     });
   });
 
