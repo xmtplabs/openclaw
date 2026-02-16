@@ -10,6 +10,7 @@ import {
   type ChannelPlugin,
   type PluginRuntime,
   type ReplyPayload,
+  type RuntimeLogger,
 } from "openclaw/plugin-sdk";
 import {
   ensureXmtpConfigured,
@@ -26,11 +27,6 @@ import { createAgentFromAccount } from "./lib/xmtp-client.js";
 import { xmtpOnboardingAdapter } from "./onboarding.js";
 import { getClientForAccount, setClientForAccount, xmtpOutbound } from "./outbound.js";
 import { getXmtpRuntime } from "./runtime.js";
-
-type RuntimeLogger = {
-  info: (msg: string) => void;
-  error: (msg: string) => void;
-};
 
 const CHANNEL_ID = "xmtp";
 
