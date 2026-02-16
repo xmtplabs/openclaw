@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCronJobCreate } from "./normalize.js";
+import { normalizeCronJobCreate, normalizeCronJobPatch } from "./normalize.js";
 
 describe("normalizeCronJobCreate", () => {
   it("maps legacy payload.provider to payload.channel and strips provider", () => {
@@ -233,5 +233,91 @@ describe("normalizeCronJobCreate", () => {
     const delivery = normalized.delivery as Record<string, unknown>;
     expect(delivery.mode).toBe("announce");
     expect((normalized as { isolation?: unknown }).isolation).toBeUndefined();
+  });
+
+  it("infers payload kind/session target and name for message-only jobs", () => {
+    const normalized = normalizeCronJobCreate({
+      schedule: { kind: "every", everyMs: 60_000 },
+      payload: { message: "Nightly backup" },
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.kind).toBe("agentTurn");
+    expect(payload.message).toBe("Nightly backup");
+    expect(normalized.sessionTarget).toBe("isolated");
+    expect(normalized.wakeMode).toBe("now");
+    expect(typeof normalized.name).toBe("string");
+  });
+
+  it("maps top-level model/thinking/timeout into payload for legacy add params", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "legacy root fields",
+      schedule: { kind: "every", everyMs: 60_000 },
+      payload: { kind: "agentTurn", message: "hello" },
+      model: " openrouter/deepseek/deepseek-r1 ",
+      thinking: " high ",
+      timeoutSeconds: 45,
+      allowUnsafeExternalContent: true,
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.model).toBe("openrouter/deepseek/deepseek-r1");
+    expect(payload.thinking).toBe("high");
+    expect(payload.timeoutSeconds).toBe(45);
+    expect(payload.allowUnsafeExternalContent).toBe(true);
+  });
+
+  it("coerces sessionTarget and wakeMode casing", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "casing",
+      schedule: { kind: "cron", expr: "* * * * *" },
+      sessionTarget: " IsOlAtEd ",
+      wakeMode: " NOW ",
+      payload: { kind: "agentTurn", message: "hello" },
+    }) as unknown as Record<string, unknown>;
+
+    expect(normalized.sessionTarget).toBe("isolated");
+    expect(normalized.wakeMode).toBe("now");
+  });
+
+  it("strips invalid delivery mode from partial delivery objects", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "delivery mode",
+      schedule: { kind: "cron", expr: "* * * * *" },
+      payload: { kind: "agentTurn", message: "hello" },
+      delivery: { mode: "bogus", to: "123" },
+    }) as unknown as Record<string, unknown>;
+
+    const delivery = normalized.delivery as Record<string, unknown>;
+    expect(delivery.mode).toBeUndefined();
+    expect(delivery.to).toBe("123");
+  });
+});
+
+describe("normalizeCronJobPatch", () => {
+  it("infers agentTurn kind for model-only payload patches", () => {
+    const normalized = normalizeCronJobPatch({
+      payload: {
+        model: "anthropic/claude-sonnet-4-5",
+      },
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.kind).toBe("agentTurn");
+    expect(payload.model).toBe("anthropic/claude-sonnet-4-5");
+  });
+
+  it("does not infer agentTurn kind for delivery-only legacy hints", () => {
+    const normalized = normalizeCronJobPatch({
+      payload: {
+        channel: "telegram",
+        to: "+15550001111",
+      },
+    }) as unknown as Record<string, unknown>;
+
+    const payload = normalized.payload as Record<string, unknown>;
+    expect(payload.kind).toBeUndefined();
+    expect(payload.channel).toBe("telegram");
+    expect(payload.to).toBe("+15550001111");
   });
 });

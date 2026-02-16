@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 import type { ConvosStatus } from "../types.ts";
 import type { ChannelsProps } from "./channels.types.ts";
-import { formatAgo } from "../format.ts";
+import { formatRelativeTimestamp } from "../format.ts";
 import { renderChannelConfigSection } from "./channels.config.ts";
 
 export function renderConvosCard(params: {
@@ -32,11 +32,11 @@ export function renderConvosCard(params: {
         </div>
         <div>
           <span class="label">Last start</span>
-          <span>${convos?.lastStartAt ? formatAgo(convos.lastStartAt) : "n/a"}</span>
+          <span>${convos?.lastStartAt ? formatRelativeTimestamp(convos.lastStartAt) : "n/a"}</span>
         </div>
         <div>
           <span class="label">Last probe</span>
-          <span>${convos?.lastProbeAt ? formatAgo(convos.lastProbeAt) : "n/a"}</span>
+          <span>${convos?.lastProbeAt ? formatRelativeTimestamp(convos.lastProbeAt) : "n/a"}</span>
         </div>
       </div>
 

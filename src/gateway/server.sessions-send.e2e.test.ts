@@ -4,41 +4,34 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createOpenClawTools } from "../agents/openclaw-tools.js";
 import { resolveSessionTranscriptPath } from "../config/sessions.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
+import { captureEnv } from "../test-utils/env.js";
 import {
   agentCommand,
   getFreePort,
   installGatewayTestHooks,
   startGatewayServer,
+  testState,
 } from "./test-helpers.js";
 
 installGatewayTestHooks({ scope: "suite" });
 
 let server: Awaited<ReturnType<typeof startGatewayServer>>;
 let gatewayPort: number;
-let prevGatewayPort: string | undefined;
-let prevGatewayToken: string | undefined;
+const gatewayToken = "test-token";
+let envSnapshot: ReturnType<typeof captureEnv>;
 
 beforeAll(async () => {
-  prevGatewayPort = process.env.OPENCLAW_GATEWAY_PORT;
-  prevGatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+  envSnapshot = captureEnv(["OPENCLAW_GATEWAY_PORT", "OPENCLAW_GATEWAY_TOKEN"]);
   gatewayPort = await getFreePort();
+  testState.gatewayAuth = { mode: "token", token: gatewayToken };
   process.env.OPENCLAW_GATEWAY_PORT = String(gatewayPort);
-  process.env.OPENCLAW_GATEWAY_TOKEN = "test-token";
+  process.env.OPENCLAW_GATEWAY_TOKEN = gatewayToken;
   server = await startGatewayServer(gatewayPort);
 });
 
 afterAll(async () => {
   await server.close();
-  if (prevGatewayPort === undefined) {
-    delete process.env.OPENCLAW_GATEWAY_PORT;
-  } else {
-    process.env.OPENCLAW_GATEWAY_PORT = prevGatewayPort;
-  }
-  if (prevGatewayToken === undefined) {
-    delete process.env.OPENCLAW_GATEWAY_TOKEN;
-  } else {
-    process.env.OPENCLAW_GATEWAY_TOKEN = prevGatewayToken;
-  }
+  envSnapshot.restore();
 });
 
 describe("sessions_send gateway loopback", () => {
@@ -105,8 +98,14 @@ describe("sessions_send gateway loopback", () => {
     expect(details.reply).toBe("pong");
     expect(details.sessionKey).toBe("main");
 
-    const firstCall = spy.mock.calls[0]?.[0] as { lane?: string } | undefined;
+    const firstCall = spy.mock.calls[0]?.[0] as
+      | { lane?: string; inputProvenance?: { kind?: string; sourceTool?: string } }
+      | undefined;
     expect(firstCall?.lane).toBe("nested");
+    expect(firstCall?.inputProvenance).toMatchObject({
+      kind: "inter_session",
+      sourceTool: "sessions_send",
+    });
   });
 });
 
