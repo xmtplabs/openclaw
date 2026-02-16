@@ -4,6 +4,61 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "name": { "type": "string" },
+      "enabled": { "type": "boolean" },
+      "markdown": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tables": { "type": "string", "enum": ["off", "bullets", "code"] }
+        }
+      },
+      "walletKey": { "type": "string" },
+      "dbEncryptionKey": { "type": "string" },
+      "env": { "type": "string", "enum": ["production", "dev"] },
+      "debug": { "type": "boolean" },
+      "dmPolicy": { "type": "string", "enum": ["pairing", "allowlist", "open", "disabled"] },
+      "allowFrom": {
+        "type": "array",
+        "items": { "oneOf": [{ "type": "string" }, { "type": "number" }] }
+      },
+      "groupPolicy": { "type": "string", "enum": ["open", "disabled", "allowlist"] },
+      "groups": { "type": "array", "items": { "type": "string" } },
+      "textChunkLimit": { "type": "integer", "minimum": 4000 },
+      "publicAddress": { "type": "string" },
+      "pinataApiKey": { "type": "string" },
+      "pinataSecretKey": { "type": "string" },
+      "ipfsGatewayUrl": { "type": "string", "format": "uri" },
+      "ownerAddress": { "type": "string" },
+      "web3BioApiKey": { "type": "string" }
+    }
+  },
+  "uiHints": {
+    "walletKey": {
+      "label": "Wallet Key",
+      "sensitive": true,
+      "help": "Wallet private key (hex or env var name)"
+    },
+    "dbEncryptionKey": {
+      "label": "DB Encryption Key",
+      "sensitive": true,
+      "help": "Encryption key for local XMTP storage"
+    },
+    "pinataApiKey": {
+      "label": "Pinata API Key",
+      "sensitive": true,
+      "help": "Pinata API key for IPFS upload"
+    },
+    "pinataSecretKey": {
+      "label": "Pinata Secret Key",
+      "sensitive": true,
+      "help": "Pinata secret key for IPFS upload"
+    },
+    "web3BioApiKey": {
+      "label": "web3.bio API Key",
+      "sensitive": true,
+      "help": "API key for ENS resolution"
+    }
   }
 }
