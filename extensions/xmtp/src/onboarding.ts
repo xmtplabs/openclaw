@@ -3,7 +3,7 @@ import {
   type ChannelOnboardingDmPolicy,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk";
-import type { DmPolicy } from "./config-types.js";
+import type { DmPolicy } from "./config-schema.js";
 import {
   getXmtpSection,
   listXmtpAccountIds,

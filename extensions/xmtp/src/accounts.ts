@@ -5,7 +5,7 @@ import {
   type PluginRuntime,
   type RuntimeLogger,
 } from "openclaw/plugin-sdk";
-import type { XMTPConfig } from "./config-types.js";
+import type { XMTPConfig } from "./config-schema.js";
 import {
   generateEncryptionKeyHex,
   generatePrivateKey,

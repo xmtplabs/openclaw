@@ -5,7 +5,7 @@
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import { vi } from "vitest";
 import type { ResolvedXmtpAccount, CoreConfig } from "../accounts.js";
-import type { DmPolicy, GroupPolicy, XMTPAccountConfig } from "../config-types.js";
+import type { DmPolicy, GroupPolicy, XMTPAccountConfig } from "../config-schema.js";
 import { handleInboundMessage } from "../channel.js";
 
 // ---------------------------------------------------------------------------

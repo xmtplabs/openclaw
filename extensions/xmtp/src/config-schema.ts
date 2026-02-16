@@ -69,6 +69,14 @@ export const XMTPConfigSchema = z.object({
 
 export type XMTPConfigInput = z.infer<typeof XMTPConfigSchema>;
 
+/** Derived union types (replaces config-types.ts) */
+export type DmPolicy = NonNullable<XMTPConfigInput["dmPolicy"]>;
+export type GroupPolicy = NonNullable<XMTPConfigInput["groupPolicy"]>;
+export type XMTPAccountConfig = XMTPConfigInput;
+export type XMTPConfig = XMTPConfigInput & {
+  accounts?: Record<string, XMTPAccountConfig>;
+};
+
 /**
  * JSON Schema for Control UI (converted from Zod)
  */
