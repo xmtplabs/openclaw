@@ -47,6 +47,7 @@ export async function stopAgent(accountId: string, log?: RuntimeLogger): Promise
   if (agent) {
     try {
       await agent.stop();
+      log?.info(`[${accountId}] XMTP provider stopped`);
     } catch (err) {
       log?.error(`[${accountId}] Error stopping agent: ${String(err)}`);
     }
@@ -129,6 +130,7 @@ export async function startAccount(ctx: {
 
   await new Promise<void>((resolve) => {
     const onAbort = () => {
+      log?.info(`[${account.accountId}] XMTP provider disconnecting (abort signal)`);
       void stopAgent(account.accountId, log).finally(resolve);
     };
     if (abortSignal?.aborted) {

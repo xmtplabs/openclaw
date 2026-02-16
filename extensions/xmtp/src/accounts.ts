@@ -199,7 +199,9 @@ export async function autoProvisionAccount(
   const generated = [needWalletKey && "walletKey", needEncryptionKey && "dbEncryptionKey"]
     .filter(Boolean)
     .join(", ");
-  log?.info(`[${account.accountId}] auto-provisioned XMTP keys: ${generated}`);
+  const addressSuffix =
+    publicAddress !== account.publicAddress ? ` (address: ${publicAddress})` : "";
+  log?.info(`[${account.accountId}] auto-provisioned XMTP keys: ${generated}${addressSuffix}`);
 
   return {
     ...account,
