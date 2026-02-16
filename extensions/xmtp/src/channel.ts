@@ -467,6 +467,10 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       const stateDir = runtime.state.resolveStateDir();
       const agent = await createAgentFromAccount(account, stateDir);
 
+      agent.errors.use(async ({ error }) => {
+        log?.error(`[${account.accountId}] Agent error: ${String(error)}`);
+      });
+
       // Use agent.address for backfill if config doesn't have it
       if (!account.config.publicAddress && agent.address) {
         const cfg = runtime.config.loadConfig();
@@ -480,6 +484,14 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       );
 
       const handleTextLike = async (msgCtx: MessageContext<string>) => {
+        // Skip messages from denied contacts
+        if (msgCtx.isDenied) {
+          if (account.debug) {
+            log?.info(`[${account.accountId}] Skipped message from denied contact`);
+          }
+          return;
+        }
+
         log?.info(
           `[${account.accountId}] text event: ${JSON.stringify({ content: msgCtx.message?.content?.slice(0, 50), id: msgCtx.message?.id })}`,
         );
