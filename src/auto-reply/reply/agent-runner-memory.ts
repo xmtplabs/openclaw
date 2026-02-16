@@ -113,6 +113,7 @@ export async function runMemoryFlushIfNeeded(params: {
         return runEmbeddedPiAgent({
           sessionId: params.followupRun.run.sessionId,
           sessionKey: params.sessionKey,
+          agentId: params.followupRun.run.agentId,
           messageProvider: params.sessionCtx.Provider?.trim().toLowerCase() || undefined,
           agentAccountId: params.sessionCtx.AccountId,
           messageTo: params.sessionCtx.OriginatingTo ?? params.sessionCtx.To,
@@ -152,8 +153,7 @@ export async function runMemoryFlushIfNeeded(params: {
           onAgentEvent: (evt) => {
             if (evt.stream === "compaction") {
               const phase = typeof evt.data.phase === "string" ? evt.data.phase : "";
-              const willRetry = Boolean(evt.data.willRetry);
-              if (phase === "end" && !willRetry) {
+              if (phase === "end") {
                 memoryCompactionCompleted = true;
               }
             }

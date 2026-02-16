@@ -164,7 +164,7 @@ export const convosOnboardingAdapter: ChannelOnboardingAdapter = {
                 enabled: true,
                 identityId,
                 env: account.env,
-              },
+              } as Record<string, unknown>,
             },
           };
         }
@@ -183,7 +183,7 @@ export const convosOnboardingAdapter: ChannelOnboardingAdapter = {
             identityId: instance?.identityId ?? identityId,
             env: account.env,
             ownerConversationId: conversationId,
-          },
+          } as Record<string, unknown>,
         },
       };
 
