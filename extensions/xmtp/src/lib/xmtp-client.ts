@@ -5,7 +5,6 @@
 import { Agent } from "@xmtp/agent-sdk";
 import * as path from "node:path";
 import type { ResolvedXmtpAccount } from "../accounts.js";
-import type { XmtpAgentRuntime } from "../types.js";
 import { getXmtpRuntime } from "../runtime.js";
 
 export async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
@@ -21,7 +20,7 @@ export async function withEnv<T>(vars: Record<string, string>, fn: () => Promise
 export async function createAgentFromAccount(
   account: ResolvedXmtpAccount,
   stateDir: string,
-): Promise<XmtpAgentRuntime> {
+): Promise<Agent> {
   const dbDir = path.join(stateDir, "xmtp", account.accountId);
   return withEnv(
     {
@@ -30,7 +29,7 @@ export async function createAgentFromAccount(
       XMTP_ENV: account.env,
       XMTP_DB_DIRECTORY: dbDir,
     },
-    async () => (await Agent.createFromEnv()) as unknown as XmtpAgentRuntime,
+    async () => await Agent.createFromEnv(),
   );
 }
 
@@ -52,10 +51,7 @@ export async function runTemporaryXmtpClient(params: {
       XMTP_DB_DIRECTORY: dbDir,
     },
     async () => {
-      const agent = (await Agent.createFromEnv()) as {
-        start: () => Promise<void>;
-        stop: () => Promise<void>;
-      };
+      const agent = await Agent.createFromEnv();
       try {
         await agent.start();
       } finally {

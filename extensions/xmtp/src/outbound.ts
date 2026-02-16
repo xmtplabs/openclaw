@@ -1,15 +1,15 @@
+import type { Agent } from "@xmtp/agent-sdk";
 import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
-import type { XmtpAgentRuntime } from "./types.js";
 import { resolveXmtpAccount, type CoreConfig } from "./accounts.js";
 import { getXmtpRuntime } from "./runtime.js";
 
 const CHANNEL_ID = "xmtp";
-const agents = new Map<string, XmtpAgentRuntime>();
+const agents = new Map<string, Agent>();
 
 /**
  * Set the agent runtime for an account (called from channel.ts during startAccount)
  */
-export function setClientForAccount(accountId: string, agent: XmtpAgentRuntime | null): void {
+export function setClientForAccount(accountId: string, agent: Agent | null): void {
   if (agent) {
     agents.set(accountId, agent);
   } else {
@@ -20,14 +20,14 @@ export function setClientForAccount(accountId: string, agent: XmtpAgentRuntime |
 /**
  * Get the agent runtime for an account
  */
-export function getClientForAccount(accountId: string): XmtpAgentRuntime | undefined {
+export function getClientForAccount(accountId: string): Agent | undefined {
   return agents.get(accountId);
 }
 
 /**
  * Get the agent runtime for an account or throw
  */
-export function getAgentOrThrow(accountId: string): XmtpAgentRuntime {
+export function getAgentOrThrow(accountId: string): Agent {
   const agent = agents.get(accountId);
   if (!agent) {
     throw new Error(`XMTP agent not running for account ${accountId}. Is the gateway started?`);
