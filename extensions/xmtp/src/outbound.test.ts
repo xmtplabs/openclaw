@@ -101,6 +101,30 @@ describe("XMTP outbound adapter", () => {
       );
     });
 
+    it("creates DM via createDmWithAddress when conversation not found and to is an address", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+      const ethAddress = "0xAbCdEf1234567890abcdef1234567890AbCdEf12";
+
+      const result = await xmtpOutbound.sendText!({
+        cfg,
+        to: ethAddress,
+        text: "Hello via DM",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(ethAddress);
+      expect(agent.createDmWithAddress).toHaveBeenCalledWith(ethAddress);
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("Hello via DM");
+      expect(result).toEqual(
+        expect.objectContaining({
+          channel: "xmtp",
+          messageId: "msg-id",
+        }),
+      );
+    });
+
     it("throws for unknown conversation", async () => {
       const { agent } = makeFakeAgent({ conversationId: CONVERSATION_ID });
       setClientForAccount(ACCOUNT_ID, agent as any);
@@ -160,6 +184,25 @@ describe("XMTP outbound adapter", () => {
       });
 
       expect(fakeConversation.sendText).toHaveBeenCalledWith("fallback text");
+    });
+
+    it("creates DM via createDmWithAddress when conversation not found and to is an address", async () => {
+      const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
+      setClientForAccount(ACCOUNT_ID, agent as any);
+      const cfg = makeCfg();
+      const ethAddress = "0xAbCdEf1234567890abcdef1234567890AbCdEf12";
+
+      const result = await xmtpOutbound.sendMedia!({
+        cfg,
+        to: ethAddress,
+        mediaUrl: "https://example.com/image.png",
+        accountId: ACCOUNT_ID,
+      });
+
+      expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(ethAddress);
+      expect(agent.createDmWithAddress).toHaveBeenCalledWith(ethAddress);
+      expect(fakeConversation.sendText).toHaveBeenCalledWith("https://example.com/image.png");
+      expect(result).toEqual(expect.objectContaining({ channel: "xmtp" }));
     });
 
     it("sends empty string when no mediaUrl or text", async () => {

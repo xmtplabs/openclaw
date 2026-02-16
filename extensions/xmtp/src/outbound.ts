@@ -44,7 +44,10 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
   sendText: async ({ cfg, to, text, accountId }) => {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
-    const conversation = await agent.client.conversations.getConversationById(to);
+    let conversation = await agent.client.conversations.getConversationById(to);
+    if (!conversation && to.startsWith("0x")) {
+      conversation = await agent.createDmWithAddress(to as `0x${string}`);
+    }
     if (!conversation) {
       throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
     }
@@ -55,7 +58,10 @@ export const xmtpOutbound: ChannelOutboundAdapter = {
   sendMedia: async ({ cfg, to, accountId, mediaUrl, text }) => {
     const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });
     const agent = getAgentOrThrow(account.accountId);
-    const conversation = await agent.client.conversations.getConversationById(to);
+    let conversation = await agent.client.conversations.getConversationById(to);
+    if (!conversation && to.startsWith("0x")) {
+      conversation = await agent.createDmWithAddress(to as `0x${string}`);
+    }
     if (!conversation) {
       throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
     }

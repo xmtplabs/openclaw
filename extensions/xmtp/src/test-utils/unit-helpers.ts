@@ -222,6 +222,7 @@ export function makeFakeAgent(opts?: { conversationId?: string }) {
         }),
       },
     },
+    createDmWithAddress: vi.fn(async (_address: string) => fakeConversation),
     sendText: vi.fn(async (to: string, text: string) => {
       sentToAddress.push({ to, text });
     }),
