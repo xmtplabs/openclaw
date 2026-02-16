@@ -62,6 +62,9 @@ export const XMTPConfigSchema = z.object({
 
   /** Owner wallet address (auto-paired, DM created on startup). */
   ownerAddress: z.string().optional(),
+
+  /** web3.bio API key for ENS resolution. */
+  web3BioApiKey: z.string().optional(),
 });
 
 export type XMTPConfigInput = z.infer<typeof XMTPConfigSchema>;

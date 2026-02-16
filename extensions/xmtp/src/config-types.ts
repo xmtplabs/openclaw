@@ -39,6 +39,8 @@ export type XMTPAccountConfig = {
   ipfsGatewayUrl?: string;
   /** Ethereum address of the owner. Auto-allowed for DMs; a conversation is created on startup. */
   ownerAddress?: string;
+  /** web3.bio API key for ENS resolution (optional, improves rate limits). */
+  web3BioApiKey?: string;
 };
 
 export type XMTPConfig = {
