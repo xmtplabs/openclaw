@@ -165,7 +165,7 @@ async function handleComplete() {
         env: setupResult.env,
         enabled: true,
         ...(allowFrom.length > 0 ? { allowFrom } : {}),
-      },
+      } as Record<string, unknown>,
     },
   };
 
@@ -242,7 +242,7 @@ const plugin = {
       } catch (err) {
         await cleanupSetupInstance();
         respond(false, undefined, {
-          code: -1,
+          code: "CONVOS_ERROR",
           message: err instanceof Error ? err.message : String(err),
         });
       }
@@ -258,7 +258,7 @@ const plugin = {
         respond(true, result, undefined);
       } catch (err) {
         respond(false, undefined, {
-          code: -1,
+          code: "CONVOS_ERROR",
           message: err instanceof Error ? err.message : String(err),
         });
       }
@@ -280,7 +280,7 @@ const plugin = {
       } catch (err) {
         await cleanupSetupInstance();
         respond(false, undefined, {
-          code: -1,
+          code: "CONVOS_ERROR",
           message: err instanceof Error ? err.message : String(err),
         });
       }
@@ -438,7 +438,7 @@ const plugin = {
                 ownerConversationId: result.conversationId,
                 env,
                 enabled: true,
-              },
+              } as Record<string, unknown>,
             },
           });
 
@@ -535,7 +535,7 @@ const plugin = {
                 ownerConversationId: conversationId,
                 env,
                 enabled: true,
-              },
+              } as Record<string, unknown>,
             },
           });
 

@@ -103,6 +103,7 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
       allowFrom: account.config.allowFrom ?? [],
       policyPath: "channels.convos.dmPolicy",
       allowFromPath: "channels.convos.allowFrom",
+      approveHint: "inbox ID",
     }),
   },
   pairing: {
@@ -187,9 +188,9 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
           },
         ];
       }),
-    buildChannelSummary: ({ snapshot }) => ({
+    buildChannelSummary: ({ snapshot, account }) => ({
       configured: snapshot.configured ?? false,
-      env: snapshot.env ?? "production",
+      env: (account as ResolvedConvosAccount).env ?? "production",
       running: snapshot.running ?? false,
       lastStartAt: snapshot.lastStartAt ?? null,
       lastStopAt: snapshot.lastStopAt ?? null,
@@ -218,7 +219,6 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
       name: account.name,
       enabled: account.enabled,
       configured: account.configured,
-      env: account.env,
       running: runtime?.running ?? false,
       lastStartAt: runtime?.lastStartAt ?? null,
       lastStopAt: runtime?.lastStopAt ?? null,
@@ -238,7 +238,6 @@ export const convosPlugin: ChannelPlugin<ResolvedConvosAccount> = {
 
       setStatus({
         accountId: account.accountId,
-        env: account.env,
       });
 
       log?.info(`[${account.accountId}] starting Convos provider (env: ${account.env})`);
@@ -405,7 +404,7 @@ async function deliverConvosReply(params: {
   accountId: string;
   runtime: PluginRuntime;
   log?: RuntimeLogger;
-  tableMode?: "off" | "plain" | "markdown" | "bullets" | "code";
+  tableMode?: "off" | "bullets" | "code";
 }): Promise<void> {
   const { payload, accountId, runtime, log, tableMode = "code" } = params;
 
@@ -418,11 +417,7 @@ async function deliverConvosReply(params: {
 
   if (text) {
     const cfg = runtime.config.loadConfig();
-    const chunkLimit = runtime.channel.text.resolveTextChunkLimit({
-      cfg,
-      channel: "convos",
-      accountId,
-    });
+    const chunkLimit = runtime.channel.text.resolveTextChunkLimit(cfg, "convos", accountId);
 
     const chunks = runtime.channel.text.chunkMarkdownText(text, chunkLimit);
 
