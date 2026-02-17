@@ -3,7 +3,6 @@
  * No network access needed — tests pure config parsing.
  */
 
-import type { PluginRuntime } from "openclaw/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   autoProvisionAccount,
@@ -14,6 +13,7 @@ import {
   type CoreConfig,
   type ResolvedXmtpAccount,
 } from "./accounts.js";
+import { createMockRuntime } from "./test-utils/unit-helpers.js";
 
 // Use a real 32-byte hex private key for tests that need address derivation
 const VALID_WALLET_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -373,17 +373,13 @@ function makeAccount(overrides?: Partial<ResolvedXmtpAccount>): ResolvedXmtpAcco
   };
 }
 
-function makeMockRuntime(): { runtime: PluginRuntime; writeConfigFile: ReturnType<typeof vi.fn> } {
-  const writeConfigFile = vi.fn(async () => {});
-  const loadConfig = vi.fn(() => ({ channels: { xmtp: {} } }));
-  const runtime = { config: { loadConfig, writeConfigFile } } as unknown as PluginRuntime;
-  return { runtime, writeConfigFile };
-}
-
 describe("autoProvisionAccount", () => {
   it("generates both keys when both are missing", async () => {
     const account = makeAccount();
-    const { runtime, writeConfigFile } = makeMockRuntime();
+    const {
+      runtime,
+      mocks: { writeConfigFile },
+    } = createMockRuntime();
     const log = { info: vi.fn(), error: vi.fn() };
 
     const result = await autoProvisionAccount(account, runtime, log as any);
@@ -407,7 +403,10 @@ describe("autoProvisionAccount", () => {
       walletKey: VALID_WALLET_KEY,
       publicAddress: VALID_ADDRESS,
     });
-    const { runtime, writeConfigFile } = makeMockRuntime();
+    const {
+      runtime,
+      mocks: { writeConfigFile },
+    } = createMockRuntime();
     const log = { info: vi.fn(), error: vi.fn() };
 
     const result = await autoProvisionAccount(account, runtime, log as any);
@@ -427,7 +426,10 @@ describe("autoProvisionAccount", () => {
   it("generates only walletKey when dbEncryptionKey is present", async () => {
     const existingEncKey = "ab".repeat(32);
     const account = makeAccount({ dbEncryptionKey: existingEncKey });
-    const { runtime, writeConfigFile } = makeMockRuntime();
+    const {
+      runtime,
+      mocks: { writeConfigFile },
+    } = createMockRuntime();
     const log = { info: vi.fn(), error: vi.fn() };
 
     const result = await autoProvisionAccount(account, runtime, log as any);
@@ -452,7 +454,10 @@ describe("autoProvisionAccount", () => {
       publicAddress: VALID_ADDRESS,
       configured: true,
     });
-    const { runtime, writeConfigFile } = makeMockRuntime();
+    const {
+      runtime,
+      mocks: { writeConfigFile },
+    } = createMockRuntime();
 
     const result = await autoProvisionAccount(account, runtime);
 
@@ -462,7 +467,7 @@ describe("autoProvisionAccount", () => {
 
   it("generated wallet key produces a valid Ethereum address", async () => {
     const account = makeAccount();
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await autoProvisionAccount(account, runtime);
 
@@ -475,7 +480,7 @@ describe("autoProvisionAccount", () => {
 
   it("generated encryption key is 32-byte hex", async () => {
     const account = makeAccount({ walletKey: VALID_WALLET_KEY, publicAddress: VALID_ADDRESS });
-    const { runtime } = makeMockRuntime();
+    const { runtime } = createMockRuntime();
 
     const result = await autoProvisionAccount(account, runtime);
 

@@ -23,9 +23,10 @@ import {
 import { setClientForAccount, getClientForAccount } from "./outbound.js";
 import { setXmtpRuntime } from "./runtime.js";
 import {
+  createMockEnsResolver,
+  createMockRuntime,
   createTestAccount,
   makeFakeAgent,
-  createMockRuntime,
   TEST_OWNER_ADDRESS,
   TEST_SENDER_ADDRESS,
 } from "./test-utils/unit-helpers.js";
@@ -135,10 +136,46 @@ describe("backfillPublicAddress", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildTextHandler
+// Shared handler guard-clause tests (all 5 handler builders)
 // ---------------------------------------------------------------------------
 
-describe("buildTextHandler", () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const handlerCases: Array<{
+  name: string;
+  build: (p: { account: any; runtime: any; log?: any }) => (ctx: any) => Promise<void>;
+  validMsg: Record<string, unknown>;
+}> = [
+  {
+    name: "buildTextHandler",
+    build: buildTextHandler,
+    validMsg: { content: "hello", id: "msg-1" },
+  },
+  {
+    name: "buildReactionHandler",
+    build: buildReactionHandler,
+    validMsg: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
+  },
+  {
+    name: "buildAttachmentHandler",
+    build: buildAttachmentHandler,
+    validMsg: { content: { url: "https://example.com/file" }, id: "att-1" },
+  },
+  {
+    name: "buildInlineAttachmentHandler",
+    build: buildInlineAttachmentHandler,
+    validMsg: {
+      content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
+      id: "att-1",
+    },
+  },
+  {
+    name: "buildMultiAttachmentHandler",
+    build: buildMultiAttachmentHandler,
+    validMsg: { content: { attachments: [{ url: "https://example.com/file" }] }, id: "multi-1" },
+  },
+];
+
+describe.each(handlerCases)("$name", ({ build, validMsg }) => {
   beforeEach(() => {
     setClientForAccount("default", null);
     setXmtpRuntime({
@@ -151,10 +188,7 @@ describe("buildTextHandler", () => {
   it("returns a function", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime } = createMockRuntime();
-
-    const handler = buildTextHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
+    expect(typeof build({ account, runtime })).toBe("function");
   });
 
   it("skips denied contacts", async () => {
@@ -166,10 +200,10 @@ describe("buildTextHandler", () => {
     const { runtime, mocks } = createMockRuntime();
     const log = { info: vi.fn(), error: vi.fn() };
 
-    const handler = buildTextHandler({ account, runtime, log: log as any });
+    const handler = build({ account, runtime, log: log as any });
     await handler({
       isDenied: true,
-      message: { content: "hello", id: "msg-1" },
+      message: validMsg,
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
@@ -179,14 +213,14 @@ describe("buildTextHandler", () => {
     expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
   });
 
-  it("skips messages with non-string content", async () => {
+  it("skips messages with null content", async () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const handler = buildTextHandler({ account, runtime });
+    const handler = build({ account, runtime });
     await handler({
       isDenied: false,
-      message: { content: undefined, id: "msg-1" },
+      message: { content: undefined, id: "null-1" },
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
@@ -199,10 +233,10 @@ describe("buildTextHandler", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const handler = buildTextHandler({ account, runtime });
+    const handler = build({ account, runtime });
     await handler({
       isDenied: false,
-      message: { content: "hello", id: "msg-1" },
+      message: validMsg,
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => undefined,
@@ -212,11 +246,8 @@ describe("buildTextHandler", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// buildReactionHandler
-// ---------------------------------------------------------------------------
-
-describe("buildReactionHandler", () => {
+// buildMultiAttachmentHandler has one additional edge case
+describe("buildMultiAttachmentHandler (empty array)", () => {
   beforeEach(() => {
     setClientForAccount("default", null);
     setXmtpRuntime({
@@ -224,296 +255,6 @@ describe("buildReactionHandler", () => {
         text: { chunkMarkdownText: (text: string) => [text] },
       },
     } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildReactionHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips reactions with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips reactions when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildReactionHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: { content: "\u2764\uFE0F", action: 1, reference: "msg-1" }, id: "r-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: { content: { url: "https://example.com/file" }, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: { url: "https://example.com/file" }, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildInlineAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildInlineAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildInlineAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: {
-        content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
-        id: "att-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips inline attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "att-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips inline attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildInlineAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: {
-        content: { filename: "test.png", mimeType: "image/png", content: new Uint8Array([1]) },
-        id: "att-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildMultiAttachmentHandler
-// ---------------------------------------------------------------------------
-
-describe("buildMultiAttachmentHandler", () => {
-  beforeEach(() => {
-    setClientForAccount("default", null);
-    setXmtpRuntime({
-      channel: {
-        text: { chunkMarkdownText: (text: string) => [text] },
-      },
-    } as unknown as PluginRuntime);
-  });
-
-  it("returns a function", () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-
-    expect(typeof handler).toBe("function");
-  });
-
-  it("skips denied contacts", async () => {
-    const account = createTestAccount({
-      address: TEST_OWNER_ADDRESS,
-      dmPolicy: "open",
-      debug: true,
-    });
-    const { runtime, mocks } = createMockRuntime();
-    const log = { info: vi.fn(), error: vi.fn() };
-
-    const handler = buildMultiAttachmentHandler({ account, runtime, log: log as any });
-    await handler({
-      isDenied: true,
-      message: {
-        content: { attachments: [{ url: "https://example.com/file" }] },
-        id: "multi-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("denied contact"));
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips multi-attachments with null content", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: { content: undefined, id: "multi-1" },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
   });
 
   it("skips multi-attachments with empty attachments array", async () => {
@@ -527,25 +268,6 @@ describe("buildMultiAttachmentHandler", () => {
       conversation: { id: "convo-1" },
       isDm: () => true,
       getSenderAddress: async () => "0xSender",
-    } as any);
-
-    expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
-  });
-
-  it("skips multi-attachments when sender address is empty", async () => {
-    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
-    const { runtime, mocks } = createMockRuntime();
-
-    const handler = buildMultiAttachmentHandler({ account, runtime });
-    await handler({
-      isDenied: false,
-      message: {
-        content: { attachments: [{ url: "https://example.com/file" }] },
-        id: "multi-1",
-      },
-      conversation: { id: "convo-1" },
-      isDm: () => true,
-      getSenderAddress: async () => undefined,
     } as any);
 
     expect(mocks.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
@@ -627,12 +349,7 @@ describe("owner DM creation with ENS resolution", () => {
     });
     const resolvedAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 
-    // Create a mock ENS resolver
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => resolvedAddr),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver({ resolveEnsName: resolvedAddr });
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -672,12 +389,7 @@ describe("owner DM creation with ENS resolution", () => {
       ownerAddress: "nonexistent.eth",
     });
 
-    // Create a mock ENS resolver that returns null (resolution failure)
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver();
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -717,12 +429,7 @@ describe("owner DM creation with ENS resolution", () => {
       ownerAddress: regularAddr,
     });
 
-    // Create a mock ENS resolver (should not be called)
-    const ensResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const ensResolver = createMockEnsResolver();
 
     // Simulate the ENS-aware owner DM creation logic from startAccount
     if (account.ownerAddress) {
@@ -775,11 +482,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("resolves sender address to ENS name", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "vitalik.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "vitalik.eth" });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -794,11 +497,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("does not set senderName when resolveAddress returns null", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -815,11 +514,7 @@ describe("resolveInboundEns", () => {
     const resolved = new Map<string, string | null>([
       ["nick.eth", "0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5"],
     ]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -836,11 +531,7 @@ describe("resolveInboundEns", () => {
   it("resolves Ethereum addresses mentioned in message content", async () => {
     const addr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
     const resolved = new Map<string, string | null>([[addr, "vitalik.eth"]]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -855,11 +546,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("does not set ensContext when no identifiers found in content", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const result = await resolveInboundEns({
@@ -877,11 +564,7 @@ describe("resolveInboundEns", () => {
   it("resolves group members for non-DM conversations", async () => {
     const memberAddr = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
     const resolved = new Map<string, string | null>([[memberAddr, "vitalik.eth"]]);
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => resolved),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAll: resolved });
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -905,11 +588,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("skips group member resolution for DM conversations", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -928,11 +607,7 @@ describe("resolveInboundEns", () => {
   });
 
   it("handles group member resolution failure gracefully", async () => {
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => null),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver();
     setResolverForAccount("default", mockResolver);
 
     const conversation = {
@@ -978,11 +653,7 @@ describe("buildTextHandler ENS integration", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "sender.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "sender.eth" });
     setResolverForAccount("default", mockResolver);
 
     const handler = buildTextHandler({ account, runtime });
@@ -1043,11 +714,7 @@ describe("buildReactionHandler ENS integration", () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
-    const mockResolver = {
-      resolveEnsName: vi.fn(async () => null),
-      resolveAddress: vi.fn(async () => "reactor.eth"),
-      resolveAll: vi.fn(async () => new Map()),
-    };
+    const mockResolver = createMockEnsResolver({ resolveAddress: "reactor.eth" });
     setResolverForAccount("default", mockResolver);
 
     const handler = buildReactionHandler({ account, runtime });

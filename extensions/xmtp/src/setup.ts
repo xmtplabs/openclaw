@@ -8,7 +8,7 @@ import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import { resolveXmtpAccount, updateXmtpSection, type CoreConfig } from "./accounts.js";
 import {
   generateEncryptionKeyHex,
-  generatePrivateKey,
+  generateXmtpIdentity,
   walletAddressFromPrivateKey,
 } from "./lib/identity.js";
 import { runTemporaryXmtpClient } from "./lib/xmtp-client.js";
@@ -27,11 +27,38 @@ export async function handleSetup(params: {
   env?: "production" | "dev";
   ownerAddress?: string;
 }): Promise<{ publicAddress: string }> {
+  const runtime = getXmtpRuntime();
+  const log = runtime.logging.getChildLogger();
   const env = params.env === "dev" ? "dev" : "production";
 
-  const walletKey = generatePrivateKey();
-  const dbEncryptionKey = generateEncryptionKeyHex();
-  const publicAddress = walletAddressFromPrivateKey(walletKey);
+  log?.info(`[xmtp] setup started (env: ${env})`);
+
+  const cfg = runtime.config.loadConfig() as OpenClawConfig;
+  const account = resolveXmtpAccount({
+    cfg: cfg as CoreConfig,
+    accountId: params.accountId,
+  });
+
+  log.info(`[xmtp] account resolved: ${account}`);
+
+  let walletKey: string;
+  let dbEncryptionKey: string;
+  let publicAddress: string;
+
+  if (account.walletKey && account.dbEncryptionKey) {
+    walletKey = account.walletKey;
+    dbEncryptionKey = account.dbEncryptionKey;
+    publicAddress = account.publicAddress;
+  } else if (account.walletKey) {
+    walletKey = account.walletKey;
+    dbEncryptionKey = generateEncryptionKeyHex();
+    publicAddress = walletAddressFromPrivateKey(walletKey);
+  } else {
+    const identity = generateXmtpIdentity();
+    walletKey = identity.walletKey;
+    dbEncryptionKey = identity.dbEncryptionKey;
+    publicAddress = identity.publicAddress;
+  }
 
   await runTemporaryXmtpClient({
     walletKey,
@@ -47,6 +74,8 @@ export async function handleSetup(params: {
     publicAddress,
     ownerAddress: params.ownerAddress,
   };
+
+  log?.info(`[xmtp] setup identity generated (address: ${publicAddress})`);
   return { publicAddress };
 }
 
@@ -79,7 +108,10 @@ export async function handleSetupComplete(): Promise<{ saved: true }> {
   }
 
   const runtime = getXmtpRuntime();
+  const log = runtime.logging.getChildLogger();
   const cfg = runtime.config.loadConfig() as OpenClawConfig;
+
+  log?.info("[xmtp] setup complete — writing config");
 
   const next = updateXmtpSection(cfg, {
     walletKey: setupResult.walletKey,
@@ -93,11 +125,16 @@ export async function handleSetupComplete(): Promise<{ saved: true }> {
   await runtime.config.writeConfigFile(next);
   setupResult = null;
 
+  log?.info("[xmtp] setup config saved");
   return { saved: true };
 }
 
 export function handleSetupCancel(): { cancelled: boolean } {
+  const log = getXmtpRuntime().logging.getChildLogger();
   const wasPending = setupResult !== null;
   setupResult = null;
+  if (wasPending) {
+    log?.info("[xmtp] setup cancelled");
+  }
   return { cancelled: wasPending };
 }

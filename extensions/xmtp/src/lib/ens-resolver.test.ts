@@ -8,96 +8,53 @@ import {
 } from "./ens-resolver.js";
 
 describe("isEnsName", () => {
-  it("returns true for simple .eth name", () => {
-    expect(isEnsName("nick.eth")).toBe(true);
-  });
-
-  it("returns true for subdomain .eth name", () => {
-    expect(isEnsName("pay.nick.eth")).toBe(true);
-  });
-
-  it("returns false for bare string", () => {
-    expect(isEnsName("nick")).toBe(false);
-  });
-
-  it("returns false for ethereum address", () => {
-    expect(isEnsName("0xd8da6bf26964af9d7eed9e03e53415d37aa96045")).toBe(false);
-  });
-
-  it("returns false for empty string", () => {
-    expect(isEnsName("")).toBe(false);
+  it.each([
+    ["simple .eth name", "nick.eth", true],
+    ["subdomain .eth name", "pay.nick.eth", true],
+    ["bare string", "nick", false],
+    ["ethereum address", "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", false],
+    ["empty string", "", false],
+  ] as const)("%s → %s", (_desc, input, expected) => {
+    expect(isEnsName(input)).toBe(expected);
   });
 });
 
 describe("isEthAddress", () => {
-  it("returns true for valid checksum address", () => {
-    expect(isEthAddress("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")).toBe(true);
-  });
-
-  it("returns true for lowercase address", () => {
-    expect(isEthAddress("0xd8da6bf26964af9d7eed9e03e53415d37aa96045")).toBe(true);
-  });
-
-  it("returns false for short hex", () => {
-    expect(isEthAddress("0xd8da6b")).toBe(false);
-  });
-
-  it("returns false for ENS name", () => {
-    expect(isEthAddress("vitalik.eth")).toBe(false);
+  it.each([
+    ["valid checksum address", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", true],
+    ["lowercase address", "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", true],
+    ["short hex", "0xd8da6b", false],
+    ["ENS name", "vitalik.eth", false],
+  ] as const)("%s → %s", (_desc, input, expected) => {
+    expect(isEthAddress(input)).toBe(expected);
   });
 });
 
 describe("extractEnsNames", () => {
-  it("extracts .eth names from text", () => {
-    expect(extractEnsNames("send 1 ETH to nick.eth please")).toEqual(["nick.eth"]);
-  });
-
-  it("extracts multiple names", () => {
-    const result = extractEnsNames("nick.eth and vitalik.eth are friends");
-    expect(result).toEqual(["nick.eth", "vitalik.eth"]);
-  });
-
-  it("extracts subdomain names", () => {
-    expect(extractEnsNames("check pay.nick.eth")).toEqual(["pay.nick.eth"]);
-  });
-
-  it("deduplicates", () => {
-    expect(extractEnsNames("nick.eth sent to nick.eth")).toEqual(["nick.eth"]);
-  });
-
-  it("returns empty array for no matches", () => {
-    expect(extractEnsNames("no names here")).toEqual([]);
-  });
-
-  it("filters parent when subdomain present", () => {
-    const result = extractEnsNames("pay.nick.eth and nick.eth");
-    expect(result).toEqual(["pay.nick.eth"]);
-  });
-
-  it("extracts case-insensitive .eth names", () => {
-    expect(extractEnsNames("send to NICK.ETH please")).toEqual(["NICK.ETH"]);
+  it.each([
+    ["single name", "send 1 ETH to nick.eth please", ["nick.eth"]],
+    ["multiple names", "nick.eth and vitalik.eth are friends", ["nick.eth", "vitalik.eth"]],
+    ["subdomain", "check pay.nick.eth", ["pay.nick.eth"]],
+    ["deduplicates", "nick.eth sent to nick.eth", ["nick.eth"]],
+    ["no matches", "no names here", []],
+    ["filters parent when subdomain present", "pay.nick.eth and nick.eth", ["pay.nick.eth"]],
+    ["case-insensitive", "send to NICK.ETH please", ["NICK.ETH"]],
+  ])("%s", (_desc, input, expected) => {
+    expect(extractEnsNames(input as string)).toEqual(expected);
   });
 });
 
 describe("extractEthAddresses", () => {
-  it("extracts addresses from text", () => {
-    const addr = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
-    expect(extractEthAddresses(`send to ${addr}`)).toEqual([addr]);
-  });
+  const A1 = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
+  const A2 = "0x1234567890abcdef1234567890abcdef12345678";
 
-  it("extracts multiple addresses", () => {
-    const a1 = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
-    const a2 = "0x1234567890abcdef1234567890abcdef12345678";
-    expect(extractEthAddresses(`${a1} and ${a2}`)).toEqual([a1, a2]);
-  });
-
-  it("deduplicates", () => {
-    const addr = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
-    expect(extractEthAddresses(`${addr} ${addr}`)).toEqual([addr]);
-  });
-
-  it("returns empty for no matches", () => {
-    expect(extractEthAddresses("no addresses")).toEqual([]);
+  it.each([
+    ["single address", `send to ${A1}`, [A1]],
+    ["multiple addresses", `${A1} and ${A2}`, [A1, A2]],
+    ["deduplicates", `${A1} ${A1}`, [A1]],
+    ["no matches", "no addresses", []],
+  ])("%s", (_desc, input, expected) => {
+    expect(extractEthAddresses(input)).toEqual(expected);
   });
 });
 

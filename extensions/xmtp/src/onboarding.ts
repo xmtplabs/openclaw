@@ -3,7 +3,7 @@ import {
   type ChannelOnboardingDmPolicy,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk";
-import type { DmPolicy } from "./config-types.js";
+import type { DmPolicy } from "./config-schema.js";
 import {
   getXmtpSection,
   listXmtpAccountIds,
@@ -12,11 +12,7 @@ import {
   type CoreConfig,
 } from "./accounts.js";
 import { isEnsName } from "./lib/ens-resolver.js";
-import {
-  generateEncryptionKeyHex,
-  generatePrivateKey,
-  walletAddressFromPrivateKey,
-} from "./lib/identity.js";
+import { generateXmtpIdentity, walletAddressFromPrivateKey } from "./lib/identity.js";
 import { runTemporaryXmtpClient } from "./lib/xmtp-client.js";
 
 const channel = "xmtp" as const;
@@ -119,9 +115,10 @@ export const xmtpOnboardingAdapter: ChannelOnboardingAdapter = {
     let publicAddress: string;
 
     if (keySource === "random") {
-      walletKey = generatePrivateKey();
-      dbEncryptionKey = generateEncryptionKeyHex();
-      publicAddress = walletAddressFromPrivateKey(walletKey);
+      const identity = generateXmtpIdentity();
+      walletKey = identity.walletKey;
+      dbEncryptionKey = identity.dbEncryptionKey;
+      publicAddress = identity.publicAddress;
     } else {
       walletKey = await prompter.text({
         message: "Wallet key (private key)",

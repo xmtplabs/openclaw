@@ -164,52 +164,19 @@ describe("XMTP message flow", () => {
   });
 
   describe("group policy enforcement", () => {
-    it("groupPolicy 'open' allows any group", () => {
+    it.each([
+      ["open allows any group", "open", undefined, "any-group", true],
+      ["disabled blocks all groups", "disabled", undefined, "any-group", false],
+      ["allowlist allows listed group", "allowlist", ["group-123"], "group-123", true],
+      ["allowlist blocks unlisted group", "allowlist", ["group-123"], "group-456", false],
+      ["allowlist wildcard allows all", "allowlist", ["*"], "any-group", true],
+    ] as const)("%s", (_desc, groupPolicy, groups, conversationId, expected) => {
       const account = createTestAccount({
         address: TEST_OWNER_ADDRESS,
-        groupPolicy: "open",
+        groupPolicy: groupPolicy as any,
+        groups: groups as any,
       });
-
-      expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(true);
-    });
-
-    it("groupPolicy 'disabled' blocks all groups", () => {
-      const account = createTestAccount({
-        address: TEST_OWNER_ADDRESS,
-        groupPolicy: "disabled",
-      });
-
-      expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(false);
-    });
-
-    it("groupPolicy 'allowlist' allows listed group", () => {
-      const account = createTestAccount({
-        address: TEST_OWNER_ADDRESS,
-        groupPolicy: "allowlist",
-        groups: ["group-123"],
-      });
-
-      expect(isGroupAllowed({ account, conversationId: "group-123" })).toBe(true);
-    });
-
-    it("groupPolicy 'allowlist' blocks unlisted group", () => {
-      const account = createTestAccount({
-        address: TEST_OWNER_ADDRESS,
-        groupPolicy: "allowlist",
-        groups: ["group-123"],
-      });
-
-      expect(isGroupAllowed({ account, conversationId: "group-456" })).toBe(false);
-    });
-
-    it("groupPolicy 'allowlist' with '*' allows all groups", () => {
-      const account = createTestAccount({
-        address: TEST_OWNER_ADDRESS,
-        groupPolicy: "allowlist",
-        groups: ["*"],
-      });
-
-      expect(isGroupAllowed({ account, conversationId: "any-group" })).toBe(true);
+      expect(isGroupAllowed({ account, conversationId })).toBe(expected);
     });
 
     it("drops message from disabled group conversation", async () => {
@@ -263,24 +230,45 @@ describe("XMTP message flow", () => {
   describe("ENS-aware target resolution", () => {
     const looksLikeId = xmtpPlugin.messaging!.targetResolver!.looksLikeId!;
 
-    it("recognizes Ethereum addresses", () => {
-      expect(looksLikeId("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")).toBe(true);
+    it.each([
+      ["Ethereum address", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", true],
+      ["simple ENS name", "nick.eth", true],
+      ["subdomain ENS name", "pay.nick.eth", true],
+      ["well-known ENS name", "vitalik.eth", true],
+      ["empty string", "", false],
+      ["whitespace only", "  ", false],
+      ["plain word", "hello", false],
+      ["hyphenated string", "not-an-address", false],
+    ] as const)("%s → %s", (_desc, input, expected) => {
+      expect(looksLikeId(input)).toBe(expected);
     });
 
-    it("recognizes ENS names", () => {
-      expect(looksLikeId("nick.eth")).toBe(true);
-      expect(looksLikeId("pay.nick.eth")).toBe(true);
-      expect(looksLikeId("vitalik.eth")).toBe(true);
+    it.each([
+      [
+        "32-char conversation ID via normalized",
+        "xmtp:8f83e95ea30dda840dce97bd9b8b21e4",
+        "8f83e95ea30dda840dce97bd9b8b21e4",
+        true,
+      ],
+      [
+        "64-char conversation topic via normalized",
+        "xmtp:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        true,
+      ],
+      ["short hex (15 chars) rejected", "xmtp:abcdef012345678", "abcdef012345678", false],
+      [
+        "non-hex chars in normalized rejected",
+        "xmtp:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        false,
+      ],
+    ] as const)("conversation ID: %s", (_desc, raw, normalized, expected) => {
+      expect(looksLikeId(raw, normalized)).toBe(expected);
     });
 
-    it("rejects empty strings", () => {
-      expect(looksLikeId("")).toBe(false);
-      expect(looksLikeId("  ")).toBe(false);
-    });
-
-    it("rejects non-ENS non-address strings", () => {
-      expect(looksLikeId("hello")).toBe(false);
-      expect(looksLikeId("not-an-address")).toBe(false);
+    it("recognizes bare hex conversation ID without normalized param", () => {
+      expect(looksLikeId("8f83e95ea30dda840dce97bd9b8b21e4")).toBe(true);
     });
 
     it("hint mentions ENS name", () => {

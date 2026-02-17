@@ -5,7 +5,7 @@
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import { vi } from "vitest";
 import type { ResolvedXmtpAccount, CoreConfig } from "../accounts.js";
-import type { DmPolicy, GroupPolicy, XMTPAccountConfig } from "../config-types.js";
+import type { DmPolicy, GroupPolicy, XMTPAccountConfig } from "../config-schema.js";
 import { handleInboundMessage } from "../channel.js";
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,7 @@ export function createMockRuntime(overrides?: {
   dmPolicy?: DmPolicy;
   allowFrom?: Array<string | number>;
   storeAllowFrom?: string[];
+  pairingResult?: { code: string; created: boolean };
 }): MockRuntime {
   const cfg: CoreConfig = {
     channels: {
@@ -138,7 +139,9 @@ export function createMockRuntime(overrides?: {
     ({ code }: { channel: string; idLine: string; code: string }) => `Pairing code: ${code}`,
   );
   const readAllowFromStore = vi.fn(async () => overrides?.storeAllowFrom ?? []);
-  const upsertPairingRequest = vi.fn(async () => ({ code: "TESTCODE", created: true }));
+  const upsertPairingRequest = vi.fn(
+    async () => overrides?.pairingResult ?? { code: "TESTCODE", created: true },
+  );
 
   const runtime = {
     config: { loadConfig, writeConfigFile },
@@ -190,6 +193,26 @@ export function createMockRuntime(overrides?: {
       readAllowFromStore,
       upsertPairingRequest,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mock ENS resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a mock EnsResolver for unit tests.
+ * Each method returns the provided default value (or null/empty Map).
+ */
+export function createMockEnsResolver(overrides?: {
+  resolveEnsName?: string | null;
+  resolveAddress?: string | null;
+  resolveAll?: Map<string, string | null>;
+}) {
+  return {
+    resolveEnsName: vi.fn(async () => overrides?.resolveEnsName ?? null),
+    resolveAddress: vi.fn(async () => overrides?.resolveAddress ?? null),
+    resolveAll: vi.fn(async () => overrides?.resolveAll ?? new Map<string, string | null>()),
   };
 }
 

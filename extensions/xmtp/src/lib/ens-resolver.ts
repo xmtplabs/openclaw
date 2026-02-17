@@ -189,6 +189,25 @@ export function setResolverForAccount(accountId: string, resolver: EnsResolver |
 }
 
 // ---------------------------------------------------------------------------
+// Owner address resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve an owner address that might be an ENS name to a raw Ethereum address.
+ * Returns the resolved address, or the original value if not an ENS name or
+ * resolution fails.
+ */
+export async function resolveOwnerAddress(
+  ownerAddress: string,
+  resolver: EnsResolver | null,
+): Promise<string> {
+  if (!isEnsName(ownerAddress)) return ownerAddress;
+  if (!resolver) return ownerAddress;
+  const resolved = await resolver.resolveEnsName(ownerAddress);
+  return resolved ?? ownerAddress;
+}
+
+// ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
 

@@ -20,3 +20,17 @@ export function walletAddressFromPrivateKey(walletKey: string): string {
   const hexKey = walletKey.startsWith("0x") ? walletKey : `0x${walletKey}`;
   return privateKeyToAccount(hexKey as `0x${string}`).address;
 }
+
+/**
+ * Generate a complete XMTP identity: wallet key, encryption key, and public address.
+ */
+export function generateXmtpIdentity(): {
+  walletKey: string;
+  dbEncryptionKey: string;
+  publicAddress: string;
+} {
+  const walletKey = generatePrivateKey();
+  const dbEncryptionKey = generateEncryptionKeyHex();
+  const publicAddress = walletAddressFromPrivateKey(walletKey);
+  return { walletKey, dbEncryptionKey, publicAddress };
+}

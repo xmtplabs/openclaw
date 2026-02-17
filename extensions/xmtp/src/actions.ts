@@ -1,6 +1,7 @@
 import type { ChannelMessageActionAdapter, ChannelMessageActionName } from "openclaw/plugin-sdk";
 import { jsonResult, readReactionParams, readStringParam } from "openclaw/plugin-sdk";
 import { listXmtpAccountIds, resolveXmtpAccount, type CoreConfig } from "./accounts.js";
+import { getOrCreateConversation } from "./lib/xmtp-client.js";
 import { getAgentOrThrow } from "./outbound.js";
 
 export const xmtpMessageActions: ChannelMessageActionAdapter = {
@@ -18,13 +19,7 @@ export const xmtpMessageActions: ChannelMessageActionAdapter = {
     if (action === "send") {
       const to = readStringParam(params, "to", { required: true });
       const message = readStringParam(params, "message", { required: true, allowEmpty: true });
-      let conversation = await agent.client.conversations.getConversationById(to);
-      if (!conversation && to.startsWith("0x")) {
-        conversation = await agent.createDmWithAddress(to as `0x${string}`);
-      }
-      if (!conversation) {
-        throw new Error(`Conversation not found: ${to.slice(0, 12)}...`);
-      }
+      const conversation = await getOrCreateConversation(agent, to);
       const messageId = await conversation.sendText(message ?? "");
       return jsonResult({ ok: true, to, messageId });
     }

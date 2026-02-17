@@ -5,7 +5,7 @@
 
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk";
 import type { ResolvedXmtpAccount } from "./accounts.js";
-import { getResolverForAccount, isEnsName } from "./lib/ens-resolver.js";
+import { getResolverForAccount, isEnsName, resolveOwnerAddress } from "./lib/ens-resolver.js";
 import { getClientForAccount } from "./outbound.js";
 
 const CHANNEL_ID = "xmtp";
@@ -68,12 +68,11 @@ export async function evaluateDmAccess(params: {
 
   // Owner is always allowed (unless DMs are fully disabled)
   if (account.ownerAddress) {
-    let ownerAddr = normalizeXmtpAddress(account.ownerAddress);
-    if (isEnsName(ownerAddr)) {
-      const resolver = getResolverForAccount(account.accountId);
-      const resolved = resolver ? await resolver.resolveEnsName(ownerAddr) : null;
-      if (resolved) ownerAddr = resolved;
-    }
+    const resolver = getResolverForAccount(account.accountId);
+    const ownerAddr = await resolveOwnerAddress(
+      normalizeXmtpAddress(account.ownerAddress),
+      resolver,
+    );
     if (ownerAddr && normalizedSender.toLowerCase() === ownerAddr.toLowerCase()) {
       return { allowed: true };
     }

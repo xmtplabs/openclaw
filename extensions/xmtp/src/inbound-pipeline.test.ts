@@ -94,7 +94,7 @@ describe("runInboundPipeline", () => {
       expect.objectContaining({
         channel: "XMTP",
         from: TEST_SENDER_ADDRESS.slice(0, 12),
-        body: "test message",
+        body: "test message [message_id:msg-1]",
       }),
     );
   });
@@ -111,6 +111,7 @@ describe("runInboundPipeline", () => {
       expect.objectContaining({
         RawBody: "hello world",
         CommandBody: "hello world",
+        BodyForAgent: "hello world [message_id:msg-42]",
         From: `xmtp:${TEST_SENDER_ADDRESS}`,
         To: `xmtp:${CONVERSATION_ID}`,
         ChatType: "direct",
@@ -187,6 +188,45 @@ describe("runInboundPipeline", () => {
     const call = mocks.dispatchReplyWithBufferedBlockDispatcher.mock.calls[0][0];
     expect(call.dispatcherOptions.onError).toBeDefined();
     expect(typeof call.dispatcherOptions.onError).toBe("function");
+  });
+});
+
+describe("message ID tagging", () => {
+  it("sets BodyForAgent with [message_id:...] tag when messageId is provided", async () => {
+    const { promise, mocks } = callPipeline({ content: "hello", messageId: "msg-42" });
+    await promise;
+
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        BodyForAgent: "hello [message_id:msg-42]",
+        CommandBody: "hello",
+        RawBody: "hello",
+      }),
+    );
+  });
+
+  it("does not set BodyForAgent tag when messageId is undefined", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: CONVERSATION_ID,
+      content: "hello",
+      messageId: undefined,
+      isDirect: true,
+      runtime,
+      deliverReply: vi.fn(async () => {}),
+    });
+
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        BodyForAgent: "hello",
+        CommandBody: "hello",
+        RawBody: "hello",
+      }),
+    );
   });
 });
 

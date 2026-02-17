@@ -15,7 +15,7 @@ import {
   getAgentOrThrow,
 } from "./outbound.js";
 import { getXmtpRuntime, setXmtpRuntime } from "./runtime.js";
-import { makeFakeAgent } from "./test-utils/unit-helpers.js";
+import { createMockEnsResolver, makeFakeAgent } from "./test-utils/unit-helpers.js";
 
 vi.mock("@xmtp/agent-sdk", () => ({
   encryptAttachment: vi.fn(
@@ -467,11 +467,10 @@ describe("XMTP outbound adapter", () => {
     it("sendText resolves ENS name to address before sending", async () => {
       const { agent, fakeConversation } = makeFakeAgent();
       setClientForAccount(ACCOUNT_ID, agent as any);
-      setResolverForAccount(ACCOUNT_ID, {
-        resolveEnsName: vi.fn(async () => RESOLVED_ADDRESS),
-        resolveAddress: vi.fn(async () => null),
-        resolveAll: vi.fn(async () => new Map()),
-      });
+      setResolverForAccount(
+        ACCOUNT_ID,
+        createMockEnsResolver({ resolveEnsName: RESOLVED_ADDRESS }),
+      );
       const cfg = makeCfg();
 
       await xmtpOutbound.sendText!({
@@ -488,11 +487,10 @@ describe("XMTP outbound adapter", () => {
     it("sendMedia resolves ENS name to address before sending", async () => {
       const { agent, fakeConversation } = makeFakeAgent();
       setClientForAccount(ACCOUNT_ID, agent as any);
-      setResolverForAccount(ACCOUNT_ID, {
-        resolveEnsName: vi.fn(async () => RESOLVED_ADDRESS),
-        resolveAddress: vi.fn(async () => null),
-        resolveAll: vi.fn(async () => new Map()),
-      });
+      setResolverForAccount(
+        ACCOUNT_ID,
+        createMockEnsResolver({ resolveEnsName: RESOLVED_ADDRESS }),
+      );
       const cfg = makeCfg();
 
       await xmtpOutbound.sendMedia!({
@@ -509,11 +507,7 @@ describe("XMTP outbound adapter", () => {
     it("falls back to original value when ENS resolution returns null", async () => {
       const { agent } = makeFakeAgent({ conversationId: CONVERSATION_ID });
       setClientForAccount(ACCOUNT_ID, agent as any);
-      setResolverForAccount(ACCOUNT_ID, {
-        resolveEnsName: vi.fn(async () => null),
-        resolveAddress: vi.fn(async () => null),
-        resolveAll: vi.fn(async () => new Map()),
-      });
+      setResolverForAccount(ACCOUNT_ID, createMockEnsResolver());
       const cfg = makeCfg();
 
       // nick.eth will be unresolved (null) — should use original "nick.eth" as target
@@ -534,12 +528,8 @@ describe("XMTP outbound adapter", () => {
     it("passes non-ENS targets through without resolution", async () => {
       const { agent, fakeConversation } = makeFakeAgent({ conversationId: CONVERSATION_ID });
       setClientForAccount(ACCOUNT_ID, agent as any);
-      const mockResolveEnsName = vi.fn(async () => RESOLVED_ADDRESS);
-      setResolverForAccount(ACCOUNT_ID, {
-        resolveEnsName: mockResolveEnsName,
-        resolveAddress: vi.fn(async () => null),
-        resolveAll: vi.fn(async () => new Map()),
-      });
+      const mockResolver = createMockEnsResolver({ resolveEnsName: RESOLVED_ADDRESS });
+      setResolverForAccount(ACCOUNT_ID, mockResolver);
       const cfg = makeCfg();
 
       await xmtpOutbound.sendText!({
@@ -550,7 +540,7 @@ describe("XMTP outbound adapter", () => {
       });
 
       // Should NOT have called resolveEnsName since CONVERSATION_ID is not an ENS name
-      expect(mockResolveEnsName).not.toHaveBeenCalled();
+      expect(mockResolver.resolveEnsName).not.toHaveBeenCalled();
       expect(agent.client.conversations.getConversationById).toHaveBeenCalledWith(CONVERSATION_ID);
     });
   });
