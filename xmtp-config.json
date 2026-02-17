@@ -1,0 +1,49 @@
+cat > /data/openclaw.json << 'EOF'
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-6",
+        "fallbacks": ["anthropic/claude-sonnet-4-5"]
+      },
+      "maxConcurrent": 4
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true
+      }
+    ]
+  },
+  "auth": {
+    "profiles": {
+      "anthropic:default": { "mode": "token", "provider": "anthropic" },
+    }
+  },
+  "channels": {
+    "xmtp": {
+      "enabled": true,
+      "ownerAddress": "0xa2b9ab5cd400f1f6ea5f54f0f68c75419c89abcb",
+      "env": "dev",
+      "dmPolicy": "pairing",
+      "pinataApiKey": "${PINATA_API_KEY}",
+      "pinataSecretKey": "${PINATA_SECRET_KEY}"
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "auto",
+    "trustedProxies": ["172.16.0.0/12"],
+    "auth": {
+      "mode": "token",
+    }
+  },
+  "plugins": {
+    "entries": {
+      "xmtp": {
+        "enabled": true,
+      }
+    }
+  }
+}
+EOF
