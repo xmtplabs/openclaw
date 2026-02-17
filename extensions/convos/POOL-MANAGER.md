@@ -1,66 +1,94 @@
-# Convos Pool Manager Integration
+# Convos HTTP API
 
-How to provision OpenClaw instances with Convos from a pool manager.
+HTTP endpoints registered by the Convos plugin. All endpoints accept JSON request bodies and return JSON responses. Non-matching HTTP methods return `405`.
 
-## Architecture
+## Authentication
 
-Each OpenClaw instance runs exactly one Convos conversation. The pool manager provisions fresh instances, each bound to a single conversation. No setup flow or onboarding is needed.
+All endpoints check for a `poolApiKey` in the OpenClaw config at `channels.convos.poolApiKey`. When set, requests must include:
 
-## Provisioning Flow
-
-### 1. Configure the instance
-
-The pool manager should configure the OpenClaw instance with an API key and enable the Convos plugin. This can be done via CLI commands or by writing the config file directly.
-
-```bash
-# Set the AI provider token
-openclaw config set auth.profiles.anthropic:default.provider anthropic
-openclaw config set auth.profiles.anthropic:default.mode token
-# (API key is set via ANTHROPIC_API_KEY env var or openclaw config set)
-
-# Enable convos plugin and set environment
-openclaw config set channels.convos.enabled true
-openclaw config set channels.convos.env dev
+```
+Authorization: Bearer <poolApiKey>
 ```
 
-Or write `~/.openclaw/openclaw.json` directly:
+When `poolApiKey` is not configured, all requests are allowed without authentication.
+
+Unauthorized requests return `401`:
 
 ```json
-{
-  "auth": {
-    "profiles": {
-      "anthropic:default": {
-        "provider": "anthropic",
-        "mode": "token"
-      }
-    }
-  },
-  "channels": {
-    "convos": {
-      "enabled": true,
-      "env": "dev"
-    }
-  }
-}
+{ "error": "Unauthorized" }
 ```
 
-### 2. Start the gateway
+## Constraints
 
-```bash
-openclaw gateway run --port 18789
+- **One conversation per process.** `/convos/conversation` and `/convos/join` return `409` if the instance is already bound to a conversation.
+- **No restart required.** After `/convos/conversation` or `/convos/join`, the instance is immediately live with full message handling.
+- **XMTP keys are created lazily.** Enabling the plugin does not create XMTP state. Keys are created on the first `/convos/conversation` or `/convos/join` call.
+- **`/convos/setup` endpoints are for the Control UI onboarding flow** (show QR, wait for join, confirm). They are separate from `/convos/conversation`.
+- **Setup auto-cleanup.** An active setup instance is automatically stopped after 10 minutes if `/convos/setup/complete` is not called.
+- **`instructions` parameter.** When provided to `/convos/conversation` or `/convos/join`, the value is written to `~/.openclaw/workspace/INSTRUCTIONS.md`, which is loaded into the agent system prompt on each invocation.
+
+## Endpoints
+
+| Method | Path                        | Description                                     |
+| ------ | --------------------------- | ----------------------------------------------- |
+| GET    | `/convos/status`            | Health check                                    |
+| POST   | `/convos/conversation`      | Create a new conversation                       |
+| POST   | `/convos/join`              | Join an existing conversation via invite URL    |
+| POST   | `/convos/conversation/send` | Send a message into the active conversation     |
+| POST   | `/convos/rename`            | Rename the conversation and agent profile       |
+| POST   | `/convos/lock`              | Lock or unlock the conversation                 |
+| POST   | `/convos/explode`           | Destroy the conversation (irreversible)         |
+| POST   | `/convos/setup`             | Start onboarding setup flow (Control UI)        |
+| GET    | `/convos/setup/status`      | Poll setup join status                          |
+| POST   | `/convos/setup/complete`    | Finalize setup and write config                 |
+| POST   | `/convos/setup/cancel`      | Cancel an active setup                          |
+| POST   | `/convos/reset`             | Re-run setup with a fresh identity (force mode) |
+
+---
+
+### GET /convos/status
+
+Returns instance health. The `streaming` field reflects whether the XMTP child process is alive.
+
+**Response (no conversation bound):**
+
+```json
+{ "ready": true, "conversation": null, "streaming": false }
 ```
 
-At this point, the Convos plugin is loaded and HTTP routes are available, but no XMTP identity or conversation exists yet.
+**Response (conversation bound, stream alive):**
 
-### 3. Create a conversation
-
-```bash
-curl -s -X POST http://localhost:18789/convos/conversation \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"My Agent","env":"dev"}' | jq .
+```json
+{ "ready": true, "conversation": { "id": "abc123..." }, "streaming": true }
 ```
 
-Response:
+**Response (conversation bound, stream dead):**
+
+```json
+{ "ready": true, "conversation": { "id": "abc123..." }, "streaming": false }
+```
+
+---
+
+### POST /convos/conversation
+
+Create a new XMTP identity and conversation. Writes config and starts the message stream and join-request processor. Returns `409` if the instance is already bound.
+
+**Request body:**
+
+| Param        | Type   | Default          | Description                                            |
+| ------------ | ------ | ---------------- | ------------------------------------------------------ |
+| name         | string | `"Convos Agent"` | Conversation display name                              |
+| profileName  | string | value of `name`  | Agent profile display name (independent of convo name) |
+| profileImage | string | —                | URL for the agent profile image                        |
+| description  | string | —                | Conversation description                               |
+| imageUrl     | string | —                | Conversation image URL                                 |
+| permissions  | string | —                | `"all-members"` or `"admin-only"`                      |
+| env          | string | from config      | `"dev"` or `"production"`                              |
+| accountId    | string | —                | Account ID (for multi-account setups)                  |
+| instructions | string | —                | Written to `INSTRUCTIONS.md` for the agent prompt      |
+
+**Response (`200`):**
 
 ```json
 {
@@ -70,168 +98,243 @@ Response:
 }
 ```
 
-This single call does everything:
+**Response (`409`):**
 
-- Creates a new XMTP identity (private keys stored in `~/.convos/identities/`)
-- Creates a new XMTP conversation
-- Writes config (`ownerConversationId`, `identityId`, `env`, `enabled`)
-- Starts the message stream and join-request processor
-- The instance is immediately ready to send and receive messages
-
-### 4. Share the invite
-
-Give the `inviteUrl` to the user. They open it in the Convos iOS app to join the conversation.
-
-### Alternative: Join an existing conversation
-
-If the user already created a conversation and has an invite:
-
-```bash
-curl -s -X POST http://localhost:18789/convos/join \
-  -H 'Content-Type: application/json' \
-  -d '{"inviteUrl":"https://dev.convos.org/v2?i=...","name":"My Agent","env":"dev"}' | jq .
+```json
+{
+  "error": "Instance already bound to a conversation. Terminate process and provision a new one."
+}
 ```
 
-## When are XMTP keys created?
-
-XMTP identity and private keys are created lazily on the first `/convos/conversation` or `/convos/join` call. Enabling the plugin does NOT create any XMTP state. The `convos` CLI manages keys internally in `~/.convos/identities/`.
-
-## Important constraints
-
-- **One conversation per process.** Calling `/convos/conversation` or `/convos/join` a second time returns `409`. To provision a new conversation, terminate the process and start a fresh one.
-- **No setup flow needed.** The `/convos/setup` endpoints exist for the Control UI onboarding experience (show QR, wait for join, confirm). The pool manager should skip these entirely.
-- **No restart needed.** After `/convos/conversation` or `/convos/join`, the instance is immediately live with full message handling. No gateway restart required.
-
-## Customizing agent behavior
-
-Write operator-level directives to `~/.openclaw/workspace/INSTRUCTIONS.md` to customize the agent's system prompt. This is an OpenClaw core feature (not Convos-specific) — any text in that file is injected into every agent invocation as operator-provided instructions.
-
-- Write the file before or after starting the gateway; it is loaded fresh on each agent invocation, so changes take effect immediately without a restart.
-- Use it for personality, tone, tool restrictions, domain knowledge, or any behavioral guardrails.
-- Each instance can have its own `INSTRUCTIONS.md`, or you can bake a shared one into your golden image.
-
-Example `~/.openclaw/workspace/INSTRUCTIONS.md`:
-
-```markdown
-You are a customer support agent for Acme Corp.
-
-- Always greet the user by name if known.
-- Never discuss competitor products.
-- Escalate billing disputes to a human operator.
-```
-
-For the golden checkpoint approach, write `INSTRUCTIONS.md` during step 1 (building the golden image) so every instance launched from the checkpoint inherits the same directives.
-
-## HTTP API Reference
-
-| Method | Path                        | Description                                       |
-| ------ | --------------------------- | ------------------------------------------------- |
-| GET    | `/convos/status`            | Health check — ready, conversation, streaming     |
-| POST   | `/convos/conversation`      | Create a new conversation (returns invite URL)    |
-| POST   | `/convos/join`              | Join an existing conversation via invite URL      |
-| POST   | `/convos/conversation/send` | Send a message                                    |
-| POST   | `/convos/rename`            | Rename the conversation                           |
-| POST   | `/convos/lock`              | Lock/unlock the conversation (`{"unlock": true}`) |
-| POST   | `/convos/explode`           | Destroy the conversation (irreversible)           |
-
-All endpoints accept JSON bodies. All return JSON responses.
-
-## Request body parameters
-
-### POST /convos/conversation
-
-| Param     | Type   | Default     | Description                           |
-| --------- | ------ | ----------- | ------------------------------------- |
-| name      | string | "OpenClaw"  | Conversation and profile display name |
-| env       | string | from config | "dev" or "production"                 |
-| accountId | string | "default"   | Account ID (for multi-account setups) |
+---
 
 ### POST /convos/join
 
-| Param     | Type   | Default     | Description           |
-| --------- | ------ | ----------- | --------------------- |
-| inviteUrl | string | required    | Invite URL or slug    |
-| name      | string | "OpenClaw"  | Profile display name  |
-| env       | string | from config | "dev" or "production" |
-| accountId | string | "default"   | Account ID            |
+Join an existing conversation via invite URL. Creates an XMTP identity, sends a join request, and waits up to 60 seconds for acceptance. Writes config and starts the message stream on success. Returns `409` if the instance is already bound.
 
-### GET /convos/status
+**Request body:**
 
-Returns the instance health. The `streaming` field confirms the XMTP child process is alive (not just that the instance variable is set).
+| Param        | Type   | Default          | Description                                       |
+| ------------ | ------ | ---------------- | ------------------------------------------------- |
+| inviteUrl    | string | **required**     | Full invite URL or slug                           |
+| profileName  | string | `"Convos Agent"` | Agent profile display name                        |
+| profileImage | string | —                | URL for the agent profile image                   |
+| env          | string | from config      | `"dev"` or `"production"`                         |
+| accountId    | string | —                | Account ID (for multi-account setups)             |
+| instructions | string | —                | Written to `INSTRUCTIONS.md` for the agent prompt |
 
-```jsonc
-// Gateway up, no conversation bound
-{ "ready": true, "conversation": null, "streaming": false }
+**Response (`200` — joined):**
 
-// Conversation bound, XMTP stream alive
-{ "ready": true, "conversation": { "id": "abc..." }, "streaming": true }
-
-// Conversation bound, XMTP stream dead
-{ "ready": true, "conversation": { "id": "abc..." }, "streaming": false }
+```json
+{ "status": "joined", "conversationId": "abc123..." }
 ```
 
-## Recommendation: Golden Checkpoint Instead of Pool Manager
+**Response (`200` — join request not accepted within timeout):**
 
-Because XMTP identity creation happens lazily on `/convos/conversation`, you can eliminate the pool manager entirely using a golden checkpoint approach:
+```json
+{ "status": "waiting_for_acceptance" }
+```
 
-### The insight
+**Response (`409`):**
 
-A fully configured OpenClaw instance — with API key, plugin enabled, env set, gateway ready — is identical before the `/convos/conversation` call. No XMTP state exists yet. This means you can snapshot this state once and stamp out copies on demand.
+```json
+{
+  "error": "Instance already bound to a conversation. Terminate process and provision a new one."
+}
+```
 
-### Golden checkpoint flow
+---
 
-1. **Build the golden image once:**
+### POST /convos/conversation/send
 
-   ```bash
-   # Configure everything except the conversation
-   openclaw config set auth.profiles.anthropic:default.provider anthropic
-   openclaw config set auth.profiles.anthropic:default.mode token
-   openclaw config set channels.convos.enabled true
-   openclaw config set channels.convos.env dev
+Send a text message into the active conversation.
 
-   # (Optional) Write operator-level directives
-   mkdir -p ~/.openclaw/workspace
-   cat > ~/.openclaw/workspace/INSTRUCTIONS.md << 'EOF'
-   You are a helpful assistant for Acme Corp.
-   EOF
-   ```
+**Request body:**
 
-   Snapshot this as your golden checkpoint (container image, VM snapshot, Sprite checkpoint, etc). No XMTP keys, no conversations, no per-instance state.
+| Param   | Type   | Default      | Description      |
+| ------- | ------ | ------------ | ---------------- |
+| message | string | **required** | The message text |
 
-2. **On demand, launch from checkpoint:**
-   - Restore the golden checkpoint into a fresh instance
-   - Start the gateway
-   - `POST /convos/conversation` — creates XMTP identity + conversation in one call
-   - Instance is immediately live
+**Response (`200`):**
 
-3. **Each instance is fully independent:**
-   - Own XMTP identity (created at launch, not baked into the image)
-   - Own conversation
-   - Own `~/.convos/identities/` directory
-   - No shared state between instances
+```json
+{ "success": true, "messageId": "msg-id-here" }
+```
 
-### Why this eliminates the pool manager
+**Response (`400`):**
 
-| Pool manager approach                          | Golden checkpoint approach                                |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| Pre-provisions N instances, keeps them warm    | Launches instances on demand from snapshot                |
-| Manages a registry of available instances      | No registry — each instance is stateless until first call |
-| Assigns pre-created conversations to users     | Creates conversation at the moment the user needs it      |
-| Wastes resources on idle instances             | Zero idle cost — instances only exist when needed         |
-| Complex: health checks, recycling, rebalancing | Simple: launch, call one endpoint, done                   |
+```json
+{ "error": "No active conversation" }
+```
 
-### Cold start time
+---
 
-The only tradeoff is cold start time. Launching from a golden checkpoint adds:
+### POST /convos/rename
 
-- Checkpoint restore time (platform-dependent)
-- Gateway startup (~1-3s)
-- `/convos/conversation` call (~2-5s for XMTP identity creation + conversation)
+Rename the conversation and update the agent profile name.
 
-Total: roughly 5-10 seconds from launch to a live conversation. If this is acceptable, no pool manager is needed.
+**Request body:**
 
-### When you still need a pool manager
+| Param | Type   | Default      | Description  |
+| ----- | ------ | ------------ | ------------ |
+| name  | string | **required** | The new name |
 
-- Cold start time is unacceptable (sub-second provisioning required)
-- You need to pre-assign conversations before users arrive
-- You're running on infrastructure that doesn't support fast checkpoints
+**Response (`200`):**
+
+```json
+{ "ok": true }
+```
+
+**Response (`400`):**
+
+```json
+{ "error": "No active conversation" }
+```
+
+---
+
+### POST /convos/lock
+
+Lock or unlock the conversation.
+
+**Request body:**
+
+| Param  | Type    | Default | Description                  |
+| ------ | ------- | ------- | ---------------------------- |
+| unlock | boolean | `false` | Set `true` to unlock instead |
+
+**Response (`200`):**
+
+```json
+{ "ok": true, "locked": true }
+```
+
+**Response (`400`):**
+
+```json
+{ "error": "No active conversation" }
+```
+
+---
+
+### POST /convos/explode
+
+Destroy the conversation. Irreversible. The instance is unbound after this call.
+
+**Request body:** empty or `{}`
+
+**Response (`200`):**
+
+```json
+{ "ok": true, "exploded": true }
+```
+
+**Response (`400`):**
+
+```json
+{ "error": "No active conversation" }
+```
+
+---
+
+### POST /convos/setup
+
+Start the Control UI onboarding flow. Creates a new XMTP identity and conversation, generates a QR code, and starts an instance that accepts join requests. If a setup is already running and `force` is not set, returns the cached response.
+
+**Request body:**
+
+| Param     | Type    | Default        | Description                              |
+| --------- | ------- | -------------- | ---------------------------------------- |
+| name      | string  | —              | Profile display name                     |
+| env       | string  | `"production"` | `"dev"` or `"production"`                |
+| accountId | string  | —              | Account ID                               |
+| force     | boolean | `false`        | Tear down existing setup and start fresh |
+
+**Response (`200`):**
+
+```json
+{
+  "inviteUrl": "https://dev.convos.org/v2?i=...",
+  "conversationId": "abc123...",
+  "qrDataUrl": "data:image/png;base64,..."
+}
+```
+
+---
+
+### GET /convos/setup/status
+
+Poll whether a user has joined the setup conversation.
+
+**Response (`200` — no join yet):**
+
+```json
+{ "active": true, "joined": false, "joinerInboxId": null }
+```
+
+**Response (`200` — user joined):**
+
+```json
+{ "active": true, "joined": true, "joinerInboxId": "inbox-id-here" }
+```
+
+**Response (`200` — no active setup):**
+
+```json
+{ "active": false, "joined": false, "joinerInboxId": null }
+```
+
+---
+
+### POST /convos/setup/complete
+
+Finalize setup. Writes `identityId`, `ownerConversationId`, `env`, and `enabled` to the OpenClaw config. Adds the joiner's inbox ID to `channels.convos.allowFrom`. Stops and cleans up the setup instance.
+
+**Request body:** empty or `{}`
+
+**Response (`200`):**
+
+```json
+{ "saved": true, "conversationId": "abc123..." }
+```
+
+**Response (`400`):**
+
+```json
+{ "error": "No active setup to complete. Run convos.setup first." }
+```
+
+---
+
+### POST /convos/setup/cancel
+
+Cancel an active setup. Stops the setup instance and discards the pending config.
+
+**Request body:** empty or `{}`
+
+**Response (`200`):**
+
+```json
+{ "cancelled": true }
+```
+
+If no setup was active:
+
+```json
+{ "cancelled": false }
+```
+
+---
+
+### POST /convos/reset
+
+Re-run setup with a fresh identity. Equivalent to `/convos/setup` with `force: true`.
+
+**Request body:**
+
+| Param     | Type   | Default        | Description               |
+| --------- | ------ | -------------- | ------------------------- |
+| env       | string | `"production"` | `"dev"` or `"production"` |
+| accountId | string | —              | Account ID                |
+
+**Response:** Same as `/convos/setup`.
