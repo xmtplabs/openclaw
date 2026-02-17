@@ -82,6 +82,7 @@ export async function runInboundPipeline(params: {
     Body: body,
     RawBody: content,
     CommandBody: content,
+    BodyForAgent: taggedContent,
     From: `xmtp:${sender}`,
     To: `xmtp:${conversationId}`,
     SessionKey: route.sessionKey,

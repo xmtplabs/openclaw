@@ -39,6 +39,8 @@ export async function handleSetup(params: {
     accountId: params.accountId,
   });
 
+  log.info(`[xmtp] account resolved: ${account}`);
+
   let walletKey: string;
   let dbEncryptionKey: string;
   let publicAddress: string;

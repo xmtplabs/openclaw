@@ -323,6 +323,9 @@ export function buildTextHandler(params: HandlerBaseParams) {
     },
     ensText: (content) => content,
     dispatch: async ({ content, sender, conversationId, messageId, isDirect, ens }) => {
+      log?.info(
+        `[${account.accountId}] dispatching text event: ${JSON.stringify({ content: content.slice(0, 50), id: messageId })}`,
+      );
       await handleInboundMessage({
         account,
         sender,

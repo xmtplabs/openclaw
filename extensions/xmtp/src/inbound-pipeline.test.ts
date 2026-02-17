@@ -111,6 +111,7 @@ describe("runInboundPipeline", () => {
       expect.objectContaining({
         RawBody: "hello world",
         CommandBody: "hello world",
+        BodyForAgent: "hello world [message_id:msg-42]",
         From: `xmtp:${TEST_SENDER_ADDRESS}`,
         To: `xmtp:${CONVERSATION_ID}`,
         ChatType: "direct",
@@ -191,18 +192,20 @@ describe("runInboundPipeline", () => {
 });
 
 describe("message ID tagging", () => {
-  it("tags body with [message_id:...] when messageId is provided", async () => {
+  it("sets BodyForAgent with [message_id:...] tag when messageId is provided", async () => {
     const { promise, mocks } = callPipeline({ content: "hello", messageId: "msg-42" });
     await promise;
 
-    expect(mocks.formatAgentEnvelope).toHaveBeenCalledWith(
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: "hello [message_id:msg-42]",
+        BodyForAgent: "hello [message_id:msg-42]",
+        CommandBody: "hello",
+        RawBody: "hello",
       }),
     );
   });
 
-  it("does not tag body when messageId is undefined", async () => {
+  it("does not set BodyForAgent tag when messageId is undefined", async () => {
     const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
     const { runtime, mocks } = createMockRuntime();
 
@@ -217,9 +220,11 @@ describe("message ID tagging", () => {
       deliverReply: vi.fn(async () => {}),
     });
 
-    expect(mocks.formatAgentEnvelope).toHaveBeenCalledWith(
+    expect(mocks.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: "hello",
+        BodyForAgent: "hello",
+        CommandBody: "hello",
+        RawBody: "hello",
       }),
     );
   });
