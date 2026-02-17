@@ -536,7 +536,7 @@ export const xmtpPlugin: ChannelPlugin<ResolvedXmtpAccount> = {
       const hints = [
         "- XMTP targets are wallet addresses, ENS names, or conversation topics. Use `to=<address or name.eth>` for `action=send`.",
         "- When ENS names are available (in SenderName, GroupMembers, or [ENS Context] blocks), always refer to users by their ENS name (e.g., nick.eth) rather than raw Ethereum addresses.",
-        "- Use `action=react` with `to=<conversation>`, `messageId=<id>`, and `emoji=<emoji>` to react to messages.",
+        "- To react to a message, use `action=react` with `emoji=<emoji>` and `messageId` set to the `[message_id:...]` tag from the message. The `to` parameter is auto-filled from context.",
       ];
       try {
         const account = resolveXmtpAccount({ cfg: cfg as CoreConfig, accountId });

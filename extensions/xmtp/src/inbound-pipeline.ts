@@ -61,6 +61,9 @@ export async function runInboundPipeline(params: {
     sessionKey: route.sessionKey,
   });
 
+  // Tag the content with the message ID so the LLM can reference it (e.g. for reactions)
+  const taggedContent = messageId ? `${content} [message_id:${messageId}]` : content;
+
   const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(cfg);
   const rawBody = runtime.channel.reply.formatAgentEnvelope({
     channel: "XMTP",
@@ -68,7 +71,7 @@ export async function runInboundPipeline(params: {
     timestamp: Date.now(),
     previousTimestamp,
     envelope: envelopeOptions,
-    body: content,
+    body: taggedContent,
   });
 
   const body = params.ensContext ? `${params.ensContext}\n${rawBody}` : rawBody;

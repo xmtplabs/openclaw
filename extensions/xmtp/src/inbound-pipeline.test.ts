@@ -94,7 +94,7 @@ describe("runInboundPipeline", () => {
       expect.objectContaining({
         channel: "XMTP",
         from: TEST_SENDER_ADDRESS.slice(0, 12),
-        body: "test message",
+        body: "test message [message_id:msg-1]",
       }),
     );
   });
@@ -187,6 +187,41 @@ describe("runInboundPipeline", () => {
     const call = mocks.dispatchReplyWithBufferedBlockDispatcher.mock.calls[0][0];
     expect(call.dispatcherOptions.onError).toBeDefined();
     expect(typeof call.dispatcherOptions.onError).toBe("function");
+  });
+});
+
+describe("message ID tagging", () => {
+  it("tags body with [message_id:...] when messageId is provided", async () => {
+    const { promise, mocks } = callPipeline({ content: "hello", messageId: "msg-42" });
+    await promise;
+
+    expect(mocks.formatAgentEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "hello [message_id:msg-42]",
+      }),
+    );
+  });
+
+  it("does not tag body when messageId is undefined", async () => {
+    const account = createTestAccount({ address: TEST_OWNER_ADDRESS, dmPolicy: "open" });
+    const { runtime, mocks } = createMockRuntime();
+
+    await runInboundPipeline({
+      account,
+      sender: TEST_SENDER_ADDRESS,
+      conversationId: CONVERSATION_ID,
+      content: "hello",
+      messageId: undefined,
+      isDirect: true,
+      runtime,
+      deliverReply: vi.fn(async () => {}),
+    });
+
+    expect(mocks.formatAgentEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "hello",
+      }),
+    );
   });
 });
 
